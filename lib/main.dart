@@ -33,8 +33,15 @@ class SAMApp extends StatelessWidget {
   }
 }
 
-class DashboardScreen extends StatelessWidget {
+class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
+
+  @override
+  State<DashboardScreen> createState() => _DashboardScreenState();
+}
+
+class _DashboardScreenState extends State<DashboardScreen> {
+  bool _isFabExpanded = false;
 
   @override
   Widget build(BuildContext context) {
@@ -189,16 +196,68 @@ class DashboardScreen extends StatelessWidget {
           ),
         ),
       ),
-      floatingActionButton: Container(
-        margin: const EdgeInsets.only(bottom: 20),
-        child: FloatingActionButton(
-          onPressed: () {},
-          backgroundColor: const Color(0xFF4A90E2),
-          child: const Icon(
-            Icons.add,
-            size: 32,
-            color: Colors.white,
-          ),
+      floatingActionButton: SizedBox(
+        height: 300,
+        child: Stack(
+          alignment: Alignment.bottomCenter,
+          clipBehavior: Clip.none,
+          children: [
+            if (_isFabExpanded) ...[
+              Positioned(
+                bottom: 200,
+                child: _buildSmallFab(
+                  icon: Icons.camera_alt,
+                  label: 'Camera',
+                  onPressed: () {
+                    setState(() => _isFabExpanded = false);
+                    // TODO: Implement camera
+                  },
+                ),
+              ),
+              Positioned(
+                bottom: 140,
+                child: _buildSmallFab(
+                  icon: Icons.mic,
+                  label: 'Voice',
+                  onPressed: () {
+                    setState(() => _isFabExpanded = false);
+                    // TODO: Implement voice
+                  },
+                ),
+              ),
+              Positioned(
+                bottom: 80,
+                child: _buildSmallFab(
+                  icon: Icons.edit,
+                  label: 'Manual',
+                  onPressed: () {
+                    setState(() => _isFabExpanded = false);
+                    // TODO: Implement manual entry
+                  },
+                ),
+              ),
+            ],
+            Positioned(
+              bottom: 20,
+              child: FloatingActionButton(
+                onPressed: () {
+                  setState(() {
+                    _isFabExpanded = !_isFabExpanded;
+                  });
+                },
+                backgroundColor: const Color(0xFF4A90E2),
+                child: AnimatedRotation(
+                  duration: const Duration(milliseconds: 200),
+                  turns: _isFabExpanded ? 0.125 : 0,
+                  child: Icon(
+                    _isFabExpanded ? Icons.close : Icons.add,
+                    size: 32,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+            ),
+          ],
         ),
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
@@ -229,6 +288,41 @@ class DashboardScreen extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildSmallFab({
+    required IconData icon,
+    required String label,
+    required VoidCallback onPressed,
+  }) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            color: const Color(0xFF1E2A3A),
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Text(
+            label,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
+        FloatingActionButton(
+          heroTag: label,
+          mini: true,
+          onPressed: onPressed,
+          backgroundColor: const Color(0xFF4A90E2),
+          child: Icon(icon, size: 20),
+        ),
+      ],
     );
   }
 
