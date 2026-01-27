@@ -266,10 +266,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 },
                 backgroundColor: const Color(0xFF4A90E2),
                 child: AnimatedRotation(
-                  duration: const Duration(milliseconds: 200),
-                  turns: _isFabExpanded ? 0.125 : 0,
-                  child: Icon(
-                    _isFabExpanded ? Icons.close : Icons.add,
+                  duration: const Duration(milliseconds: 300),
+                  turns: _isFabExpanded ? 0.375 : 0,
+                  child: const Icon(
+                    Icons.add,
                     size: 32,
                     color: Colors.white,
                   ),

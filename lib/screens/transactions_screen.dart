@@ -145,12 +145,13 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
       floatingActionButton: SizedBox(
         height: 300,
         child: Stack(
-          alignment: Alignment.bottomCenter,
+          alignment: Alignment.bottomRight,
           clipBehavior: Clip.none,
           children: [
             if (_isFabExpanded) ...[
               Positioned(
                 bottom: 200,
+                right: 0,
                 child: _buildSmallFab(
                   icon: Icons.camera_alt,
                   label: 'Camera',
@@ -162,6 +163,7 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
               ),
               Positioned(
                 bottom: 140,
+                right: 0,
                 child: _buildSmallFab(
                   icon: Icons.mic,
                   label: 'Voice',
@@ -173,6 +175,7 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
               ),
               Positioned(
                 bottom: 80,
+                right: 0,
                 child: _buildSmallFab(
                   icon: Icons.edit,
                   label: 'Manual',
@@ -185,6 +188,7 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
             ],
             Positioned(
               bottom: 0,
+              right: 0,
               child: FloatingActionButton(
                 onPressed: () {
                   setState(() {
@@ -193,10 +197,10 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
                 },
                 backgroundColor: const Color(0xFF4A90E2),
                 child: AnimatedRotation(
-                  duration: const Duration(milliseconds: 200),
-                  turns: _isFabExpanded ? 0.125 : 0,
-                  child: Icon(
-                    _isFabExpanded ? Icons.close : Icons.add,
+                  duration: const Duration(milliseconds: 300),
+                  turns: _isFabExpanded ? 0.375 : 0,
+                  child: const Icon(
+                    Icons.add,
                     size: 32,
                     color: Colors.white,
                   ),
@@ -206,6 +210,7 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
           ],
         ),
       ),
+      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
       bottomNavigationBar: _buildBottomNavBar(context),
     );
   }
