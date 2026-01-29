@@ -6,6 +6,8 @@ import '../models/account.dart';
 import '../services/database_service.dart';
 import 'package:intl/intl.dart';
 import 'accounts_screen.dart';
+import 'package:speech_to_text/speech_to_text.dart' as stt;
+import 'dart:io';
 
 class TransactionsScreen extends StatefulWidget {
   const TransactionsScreen({super.key});
@@ -20,21 +22,33 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
   List<Account> _accounts = [];
   bool _isLoading = true;
   bool _isFabExpanded = false;
+  late stt.SpeechToText _speech;
+  bool _isListening = false;
+  String _transcribedText = '';
 
   @override
   void initState() {
     super.initState();
+    _speech = stt.SpeechToText();
+    _loadData();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
     _loadData();
   }
 
   Future<void> _loadData() async {
     final transactions = await _databaseService.getTransactions();
     final accounts = await _databaseService.getAccounts();
-    setState(() {
-      _transactions = transactions;
-      _accounts = accounts;
-      _isLoading = false;
-    });
+    if (mounted) {
+      setState(() {
+        _transactions = transactions;
+        _accounts = accounts;
+        _isLoading = false;
+      });
+    }
   }
 
   @override
@@ -169,7 +183,7 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
                   label: 'Voice',
                   onPressed: () {
                     setState(() => _isFabExpanded = false);
-                    // TODO: Implement voice
+                    _showVoiceInputDialog(context);
                   },
                 ),
               ),
@@ -247,6 +261,265 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
           child: Icon(icon, size: 20),
         ),
       ],
+    );
+  }
+
+  void _showVoiceInputDialog(BuildContext context) {
+    if (_accounts.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please create an account first before adding transactions'),
+          backgroundColor: Colors.red,
+          duration: Duration(seconds: 3),
+        ),
+      );
+      return;
+    }
+
+    // For desktop testing - show manual text input as fallback
+    if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
+      _showManualTextInputDialog(context);
+      return;
+    }
+
+    showDialog(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              backgroundColor: const Color(0xFF1E2A3A),
+              title: const Text(
+                'Voice Input',
+                style: TextStyle(color: Colors.white),
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  GestureDetector(
+                    onTap: () async {
+                      if (!_isListening) {
+                        bool available = await _speech.initialize(
+                          onError: (error) {
+                            print('Speech error: $error');
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text('Error: ${error.errorMsg}'),
+                                backgroundColor: Colors.red,
+                              ),
+                            );
+                          },
+                          onStatus: (status) {
+                            print('Speech status: $status');
+                          },
+                        );
+                        
+                        if (available) {
+                          setDialogState(() {
+                            _isListening = true;
+                            _transcribedText = '';
+                          });
+                          
+                          _speech.listen(
+                            onResult: (result) {
+                              print('Recognized: ${result.recognizedWords}');
+                              setDialogState(() {
+                                _transcribedText = result.recognizedWords;
+                              });
+                              setState(() {
+                                _transcribedText = result.recognizedWords;
+                              });
+                            },
+                            listenFor: const Duration(seconds: 30),
+                            pauseFor: const Duration(seconds: 5),
+                          );
+                        } else {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Speech recognition not available. Please check microphone permissions.'),
+                              backgroundColor: Colors.red,
+                            ),
+                          );
+                        }
+                      } else {
+                        setDialogState(() {
+                          _isListening = false;
+                        });
+                        setState(() {
+                          _isListening = false;
+                        });
+                        _speech.stop();
+                      }
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.all(20),
+                      decoration: BoxDecoration(
+                        color: _isListening ? Colors.red : const Color(0xFF4A90E2),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        _isListening ? Icons.stop : Icons.mic,
+                        size: 64,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  Text(
+                    _isListening ? 'Listening...' : 'Tap microphone to start',
+                    style: const TextStyle(
+                      color: Colors.white70,
+                      fontSize: 16,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  if (_transcribedText.isNotEmpty)
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF0F1419),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        _transcribedText,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 14,
+                        ),
+                      ),
+                    ),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Example: "Add 500 dirhams to cash for groceries"',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Colors.white54,
+                      fontSize: 12,
+                      fontStyle: FontStyle.italic,
+                    ),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () {
+                    if (_isListening) {
+                      _speech.stop();
+                      setState(() {
+                        _isListening = false;
+                      });
+                    }
+                    Navigator.pop(context);
+                  },
+                  child: const Text(
+                    'Cancel',
+                    style: TextStyle(color: Colors.white70),
+                  ),
+                ),
+                if (_transcribedText.isNotEmpty && !_isListening)
+                  TextButton(
+                    onPressed: () {
+                      Navigator.pop(context);
+                      // TODO: Process the transcribed text and create transaction
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('Processing: $_transcribedText'),
+                          backgroundColor: const Color(0xFF4A90E2),
+                        ),
+                      );
+                    },
+                    child: const Text(
+                      'Process',
+                      style: TextStyle(color: Color(0xFF4A90E2)),
+                    ),
+                  ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _showManualTextInputDialog(BuildContext context) {
+    final textController = TextEditingController();
+    
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          backgroundColor: const Color(0xFF1E2A3A),
+          title: const Text(
+            'Voice Input (Desktop Test Mode)',
+            style: TextStyle(color: Colors.white),
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'Type what you would say:',
+                style: TextStyle(color: Colors.white70),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: textController,
+                style: const TextStyle(color: Colors.white),
+                decoration: const InputDecoration(
+                  hintText: 'Add 500 dirhams to cash for groceries',
+                  hintStyle: TextStyle(color: Colors.white38),
+                  enabledBorder: UnderlineInputBorder(
+                    borderSide: BorderSide(color: Colors.white38),
+                  ),
+                  focusedBorder: UnderlineInputBorder(
+                    borderSide: BorderSide(color: Color(0xFF4A90E2)),
+                  ),
+                ),
+                maxLines: 3,
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'Note: Voice recognition will work properly on mobile devices',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: Colors.white54,
+                  fontSize: 12,
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.pop(context);
+              },
+              child: const Text(
+                'Cancel',
+                style: TextStyle(color: Colors.white70),
+              ),
+            ),
+            TextButton(
+              onPressed: () {
+                if (textController.text.isNotEmpty) {
+                  Navigator.pop(context);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Processing: ${textController.text}'),
+                      backgroundColor: const Color(0xFF4A90E2),
+                    ),
+                  );
+                  // TODO: Process the text and create transaction
+                }
+              },
+              child: const Text(
+                'Process',
+                style: TextStyle(color: Color(0xFF4A90E2)),
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 

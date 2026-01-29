@@ -55,11 +55,19 @@ class _DashboardScreenState extends State<DashboardScreen> {
     _loadAccounts();
   }
 
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _loadAccounts();
+  }
+
   Future<void> _loadAccounts() async {
     final accounts = await _databaseService.getAccounts();
-    setState(() {
-      _accounts = accounts;
-    });
+    if (mounted) {
+      setState(() {
+        _accounts = accounts;
+      });
+    }
   }
 
   @override
@@ -240,7 +248,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   label: 'Voice',
                   onPressed: () {
                     setState(() => _isFabExpanded = false);
-                    // TODO: Implement voice
+                    _showVoiceInputDialog(context);
                   },
                 ),
               ),
@@ -307,6 +315,85 @@ class _DashboardScreenState extends State<DashboardScreen> {
           ),
         ),
       ),
+    );
+  }
+
+  void _showVoiceInputDialog(BuildContext context) {
+    if (_accounts.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please create an account first before adding transactions'),
+          backgroundColor: Colors.red,
+          duration: Duration(seconds: 3),
+        ),
+      );
+      return;
+    }
+
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          backgroundColor: const Color(0xFF1E2A3A),
+          title: const Text(
+            'Voice Input',
+            style: TextStyle(color: Colors.white),
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(
+                Icons.mic,
+                size: 64,
+                color: Color(0xFF4A90E2),
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'Tap the microphone to start recording your transaction',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.white70),
+              ),
+              const SizedBox(height: 24),
+              const Text(
+                'Example: "Add 500 dirhams to cash for groceries"',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: Colors.white54,
+                  fontSize: 12,
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.pop(context);
+              },
+              child: const Text(
+                'Cancel',
+                style: TextStyle(color: Colors.white70),
+              ),
+            ),
+            TextButton(
+              onPressed: () {
+                // TODO: Start voice recording
+                Navigator.pop(context);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Voice recording will be implemented next'),
+                    backgroundColor: Color(0xFF4A90E2),
+                  ),
+                );
+              },
+              child: const Text(
+                'Start Recording',
+                style: TextStyle(color: Color(0xFF4A90E2)),
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -591,17 +678,19 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   Widget _buildNavItem(BuildContext context, IconData icon, String label) {
     return GestureDetector(
-      onTap: () {
+      onTap: () async {
         if (label == 'Accounts') {
-          Navigator.push(
+          await Navigator.push(
             context,
             MaterialPageRoute(builder: (context) => const AccountsScreen()),
           );
+          _loadAccounts();
         } else if (label == 'Transactions') {
-          Navigator.push(
+          await Navigator.push(
             context,
             MaterialPageRoute(builder: (context) => const TransactionsScreen()),
           );
+          _loadAccounts();
         }
       },
       child: Container(
