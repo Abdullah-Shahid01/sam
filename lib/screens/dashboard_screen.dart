@@ -63,11 +63,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
               Positioned(
                 bottom: 200,
                 child: _buildSmallFab(
-                  icon: Icons.camera_alt,
-                  label: 'Camera',
+                  icon: Icons.photo_library,
+                  label: 'Photo',
                   onPressed: () {
                     setState(() => _isFabExpanded = false);
-                    // TODO: Implement camera
+                    _showPhotoOptionsDialog(context);
                   },
                 ),
               ),
@@ -235,6 +235,69 @@ class _DashboardScreenState extends State<DashboardScreen> {
           child: Icon(icon, size: 20, color: Colors.white),
         ),
       ],
+    );
+  }
+
+  void _showPhotoOptionsDialog(BuildContext context) {
+    if (_accounts.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please create an account first before adding transactions'),
+          backgroundColor: Colors.red,
+          duration: Duration(seconds: 3),
+        ),
+      );
+      return;
+    }
+
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          backgroundColor: AppTheme.surfaceColor,
+          title: const Text(
+            'Add from Photo',
+            style: TextStyle(color: Colors.white, fontSize: 18),
+          ),
+          contentPadding: const EdgeInsets.fromLTRB(24, 20, 24, 0),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.camera_alt, color: AppTheme.primaryColor),
+                title: const Text('Capture', style: TextStyle(color: Colors.white)),
+                subtitle: const Text('Take a photo', style: TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
+                onTap: () {
+                  Navigator.pop(context);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Camera capture will be implemented')),
+                  );
+                },
+              ),
+              const Divider(color: Colors.white12, height: 1),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.upload_file, color: AppTheme.secondaryColor),
+                title: const Text('Upload', style: TextStyle(color: Colors.white)),
+                subtitle: const Text('Choose file', style: TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
+                onTap: () {
+                  Navigator.pop(context);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('File upload will be implemented')),
+                  );
+                },
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel', style: TextStyle(color: AppTheme.textSecondary)),
+            ),
+          ],
+        );
+      },
     );
   }
 
