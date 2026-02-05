@@ -8,6 +8,7 @@ import 'package:intl/intl.dart';
 import 'accounts_screen.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'dart:io';
+import 'package:file_picker/file_picker.dart';
 
 class TransactionsScreen extends StatefulWidget {
   const TransactionsScreen({super.key});
@@ -309,9 +310,7 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
                 subtitle: const Text('Choose file', style: TextStyle(color: Color(0xFFB2B9D1), fontSize: 12)),
                 onTap: () {
                   Navigator.pop(context);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('File upload will be implemented')),
-                  );
+                  _handleFileUpload(context);
                 },
               ),
             ],
@@ -324,6 +323,114 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
           ],
         );
       },
+    );
+  }
+
+  Future<void> _handleFileUpload(BuildContext context) async {
+    try {
+      FilePickerResult? result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['jpg', 'jpeg', 'png', 'pdf'],
+        allowMultiple: false,
+      );
+
+      if (result != null && result.files.single.path != null) {
+        final file = File(result.files.single.path!);
+        final fileName = result.files.single.name;
+        final fileExtension = result.files.single.extension;
+        final fileSize = result.files.single.size;
+
+        // Show file info
+        if (mounted) {
+          showDialog(
+            context: context,
+            builder: (BuildContext context) {
+              return AlertDialog(
+                backgroundColor: const Color(0xFF1A1F3A),
+                title: const Text(
+                  'File Selected',
+                  style: TextStyle(color: Colors.white),
+                ),
+                content: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildFileInfoRow('Name', fileName),
+                    const SizedBox(height: 8),
+                    _buildFileInfoRow('Type', fileExtension?.toUpperCase() ?? 'Unknown'),
+                    const SizedBox(height: 8),
+                    _buildFileInfoRow('Size', '${(fileSize / 1024).toStringAsFixed(2)} KB'),
+                    const SizedBox(height: 16),
+                    const Text(
+                      'File uploaded successfully! Processing will be implemented next.',
+                      style: TextStyle(
+                        color: Color(0xFFB2B9D1),
+                        fontSize: 13,
+                      ),
+                    ),
+                  ],
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text(
+                      'OK',
+                      style: TextStyle(color: Color(0xFF6C5CE7)),
+                    ),
+                  ),
+                ],
+              );
+            },
+          );
+        }
+      } else {
+        // User canceled the picker
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('No file selected'),
+              duration: Duration(seconds: 2),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error picking file: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Widget _buildFileInfoRow(String label, String value) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: 60,
+          child: Text(
+            '$label:',
+            style: const TextStyle(
+              color: Color(0xFFB2B9D1),
+              fontSize: 14,
+            ),
+          ),
+        ),
+        Expanded(
+          child: Text(
+            value,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ),
+      ],
     );
   }
 

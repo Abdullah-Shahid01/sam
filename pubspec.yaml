@@ -23,6 +23,10 @@ dependencies:
   
   # Voice Recognition
   speech_to_text: ^7.0.0
+  permission_handler: ^11.0.1
+  
+  # File Picking
+  file_picker: ^8.0.0+1
   
   # UI Components
   fl_chart: ^0.66.0  # For the beautiful charts
