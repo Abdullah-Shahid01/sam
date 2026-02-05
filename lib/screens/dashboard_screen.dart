@@ -6,6 +6,7 @@ import '../models/account.dart';
 import '../models/transaction.dart';
 import '../services/database_service.dart';
 import '../widgets/dashboard_content.dart';
+import '../widgets/voice_input_dialog.dart';
 import '../config/theme.dart';
 import 'accounts_screen.dart';
 import 'transactions_screen.dart';
@@ -313,81 +314,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
       return;
     }
 
-    if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
-      _showManualTextInputDialog(context);
-      return;
-    }
-
-    // Voice input dialog for mobile
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Voice input will be implemented for mobile'),
-        backgroundColor: Colors.blue,
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => VoiceInputDialog(
+        accounts: _accounts,
+        onTransactionAdded: () {
+          _loadAccounts();
+        },
       ),
     );
   }
 
-  void _showManualTextInputDialog(BuildContext context) {
-    final textController = TextEditingController();
-    
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          backgroundColor: AppTheme.surfaceColor,
-          title: const Text(
-            'Voice Input (Desktop Test Mode)',
-            style: TextStyle(color: Colors.white),
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text(
-                'Type what you would say:',
-                style: TextStyle(color: Colors.white70),
-              ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: textController,
-                style: const TextStyle(color: Colors.white),
-                decoration: const InputDecoration(
-                  hintText: 'Add 500 dirhams to cash for groceries',
-                  hintStyle: TextStyle(color: Colors.white38),
-                  enabledBorder: UnderlineInputBorder(
-                    borderSide: BorderSide(color: Colors.white38),
-                  ),
-                  focusedBorder: UnderlineInputBorder(
-                    borderSide: BorderSide(color: AppTheme.primaryColor),
-                  ),
-                ),
-                maxLines: 3,
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel', style: TextStyle(color: Colors.white70)),
-            ),
-            TextButton(
-              onPressed: () {
-                if (textController.text.isNotEmpty) {
-                  Navigator.pop(context);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('Processing: ${textController.text}'),
-                      backgroundColor: AppTheme.primaryColor,
-                    ),
-                  );
-                }
-              },
-              child: const Text('Process', style: TextStyle(color: AppTheme.primaryColor)),
-            ),
-          ],
-        );
-      },
-    );
-  }
 
   void _showAddTransactionDialog(BuildContext context) {
     if (_accounts.isEmpty) {
