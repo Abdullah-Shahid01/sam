@@ -102,6 +102,11 @@ class _VoiceInputDialogState extends State<VoiceInputDialog>
           setState(() {
             _isListening = isListening;
           });
+          
+          // Auto-process if listening stopped and we have text
+          if (!isListening && _transcribedText.isNotEmpty && !_isProcessing && _parsedTransaction == null) {
+            _processTranscription();
+          }
         }
       },
     );

@@ -9,6 +9,11 @@ import 'accounts_screen.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'dart:io';
 import 'package:file_picker/file_picker.dart';
+import '../services/transaction_parser.dart';
+import '../models/parsed_transaction.dart';
+import '../widgets/voice_input_dialog.dart';
+import '../widgets/app_bottom_nav_bar.dart';
+import 'reports_screen.dart';
 
 class TransactionsScreen extends StatefulWidget {
   const TransactionsScreen({super.key});
@@ -481,6 +486,21 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
                           },
                           onStatus: (status) {
                             print('Speech status: $status');
+                            // Auto-process when speech engine says "done" (silence detected)
+                            if (status == 'done' || status == 'notListening') {
+                              setDialogState(() {
+                                _isListening = false;
+                              });
+                              setState(() {
+                                _isListening = false;
+                              });
+                              // Auto-process if we have text
+                              if (_transcribedText.isNotEmpty) {
+                                final result = _transactionParser.parse(_transcribedText, _accounts);
+                                Navigator.pop(context);
+                                _showAddTransactionDialog(context, parsedData: result);
+                              }
+                            }
                           },
                         );
                         
@@ -501,7 +521,7 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
                               });
                             },
                             listenFor: const Duration(seconds: 30),
-                            pauseFor: const Duration(seconds: 5),
+                            pauseFor: const Duration(seconds: 3),
                           );
                         } else {
                           ScaffoldMessenger.of(context).showSnackBar(
@@ -512,12 +532,7 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
                           );
                         }
                       } else {
-                        setDialogState(() {
-                          _isListening = false;
-                        });
-                        setState(() {
-                          _isListening = false;
-                        });
+                        // User manually stops — speech.stop triggers onStatus 'done' which auto-processes
                         _speech.stop();
                       }
                     },
@@ -587,23 +602,6 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
                     style: TextStyle(color: Colors.white70),
                   ),
                 ),
-                if (_transcribedText.isNotEmpty && !_isListening)
-                  TextButton(
-                    onPressed: () {
-                      Navigator.pop(context);
-                      // TODO: Process the transcribed text and create transaction
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text('Processing: $_transcribedText'),
-                          backgroundColor: const Color(0xFF4A90E2),
-                        ),
-                      );
-                    },
-                    child: const Text(
-                      'Process',
-                      style: TextStyle(color: Color(0xFF4A90E2)),
-                    ),
-                  ),
               ],
             );
           },
@@ -672,14 +670,10 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
             TextButton(
               onPressed: () {
                 if (textController.text.isNotEmpty) {
+                  final result = _transactionParser.parse(textController.text, _accounts);
+                  
                   Navigator.pop(context);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('Processing: ${textController.text}'),
-                      backgroundColor: const Color(0xFF4A90E2),
-                    ),
-                  );
-                  // TODO: Process the text and create transaction
+                  _showAddTransactionDialog(context, parsedData: result);
                 }
               },
               child: const Text(
@@ -693,7 +687,9 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
     );
   }
 
-  void _showAddTransactionDialog(BuildContext context) {
+  final TransactionParser _transactionParser = TransactionParser();
+  
+  void _showAddTransactionDialog(BuildContext context, {ParsedTransaction? parsedData}) {
     if (_accounts.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -704,11 +700,39 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
       return;
     }
 
-    final amountController = TextEditingController();
-    final descriptionController = TextEditingController();
-    DateTime selectedDate = DateTime.now();
-    Account? selectedAccount = _accounts.first;
-    bool isIncome = true;
+    final amountController = TextEditingController(
+      text: parsedData?.amount?.toString() ?? '',
+    );
+    final descriptionController = TextEditingController(
+      text: parsedData?.description ?? '',
+    );
+    DateTime selectedDate = parsedData?.date ?? DateTime.now();
+    
+    // account
+    Account? selectedAccount;
+    if (parsedData?.accountName != null) {
+      try {
+        selectedAccount = _accounts.firstWhere(
+          (a) => a.name.toLowerCase() == parsedData!.accountName!.toLowerCase()
+        );
+      } catch (e) {
+        selectedAccount = _accounts.first;
+      }
+    } else {
+      selectedAccount = _accounts.first;
+    }
+
+    // flow
+    bool isIncome = parsedData?.isInflow ?? true;
+    
+    // Category & Fixed
+    String selectedCategory = parsedData?.category ?? 'Uncategorized';
+    bool isFixed = parsedData?.isFixed ?? false;
+
+    final List<String> categories = [
+      'Uncategorized', 'Food', 'Transport', 'Utilities', 'Rent', 
+      'Salary', 'Shopping', 'Entertainment', 'Health', 'Other'
+    ];
 
     showDialog(
       context: context,
@@ -725,6 +749,7 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
+                    // Date Picker
                     GestureDetector(
                       onTap: () async {
                         final DateTime? picked = await showDatePicker(
@@ -765,6 +790,8 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
                       ),
                     ),
                     const SizedBox(height: 16),
+                    
+                    // In/Out Toggle
                     Row(
                       children: [
                         Expanded(
@@ -829,6 +856,8 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
                       ],
                     ),
                     const SizedBox(height: 16),
+                    
+                    // Account Dropdown
                     DropdownButtonFormField<Account>(
                       value: selectedAccount,
                       dropdownColor: const Color(0xFF1E2A3A),
@@ -858,9 +887,63 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
                       },
                     ),
                     const SizedBox(height: 16),
+                    
+                    // Category Dropdown
+                    DropdownButtonFormField<String>(
+                      value: categories.contains(selectedCategory) ? selectedCategory : 'Uncategorized',
+                      dropdownColor: const Color(0xFF1E2A3A),
+                      decoration: const InputDecoration(
+                        labelText: 'Category',
+                        labelStyle: TextStyle(color: Colors.white70),
+                        enabledBorder: UnderlineInputBorder(
+                          borderSide: BorderSide(color: Colors.white38),
+                        ),
+                        focusedBorder: UnderlineInputBorder(
+                          borderSide: BorderSide(color: Color(0xFF4A90E2)),
+                        ),
+                      ),
+                      items: categories.map((String cat) {
+                        return DropdownMenuItem<String>(
+                          value: cat,
+                          child: Text(
+                            cat,
+                            style: const TextStyle(color: Colors.white),
+                          ),
+                        );
+                      }).toList(),
+                      onChanged: (String? newValue) {
+                        if (newValue != null) {
+                          setDialogState(() {
+                            selectedCategory = newValue;
+                            // Auto-set isFixed for simple heuristic if user changes manually
+                             if (newValue == 'Rent' || newValue == 'Utilities') {
+                               isFixed = true;
+                             }
+                          });
+                        }
+                      },
+                    ),
+                    const SizedBox(height: 8),
+
+                    // isFixed Switch
+                    SwitchListTile(
+                      title: const Text('Fixed Cost', style: TextStyle(color: Colors.white70)),
+                      value: isFixed,
+                      activeColor: const Color(0xFF4A90E2),
+                      contentPadding: EdgeInsets.zero,
+                      onChanged: (bool value) {
+                        setDialogState(() {
+                          isFixed = value;
+                        });
+                      },
+                    ),
+                    
+                    const SizedBox(height: 8),
+
+                    // Amount Field
                     TextField(
                       controller: amountController,
-                      keyboardType: TextInputType.number,
+                      keyboardType: TextInputType.numberWithOptions(decimal: true),
                       style: const TextStyle(color: Colors.white),
                       decoration: const InputDecoration(
                         labelText: 'Amount',
@@ -874,6 +957,8 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
                       ),
                     ),
                     const SizedBox(height: 16),
+                    
+                    // Description Field
                     TextField(
                       controller: descriptionController,
                       style: const TextStyle(color: Colors.white),
@@ -906,7 +991,9 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
                     if (amountController.text.isNotEmpty && 
                         selectedAccount != null && 
                         selectedAccount!.id != null) {
-                      final amount = double.parse(amountController.text);
+                      final amount = double.tryParse(amountController.text);
+                      if (amount == null) return;
+
                       final finalAmount = isIncome ? amount : -amount;
                       
                       final transaction = AppTransaction(
@@ -917,6 +1004,8 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
                         description: descriptionController.text.isEmpty
                             ? null
                             : descriptionController.text,
+                        category: selectedCategory,
+                        isFixed: isFixed,
                       );
                       
                       await _databaseService.insertTransaction(transaction);
@@ -938,69 +1027,13 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
   }
 
   Widget _buildBottomNavBar(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: const Color(0xFF1E2A3A),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.3),
-            blurRadius: 10,
-            offset: const Offset(0, -2),
-          ),
-        ],
-      ),
-      child: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: [
-              _buildNavItem(context, Icons.dashboard_outlined, 'Dashboard'),
-              _buildNavItem(context, Icons.account_balance_wallet_outlined, 'Accounts'),
-              _buildNavItem(context, Icons.receipt_long_outlined, 'Transactions'),
-              _buildNavItem(context, Icons.pie_chart_outline, 'Reports'),
-              _buildNavItem(context, Icons.settings_outlined, 'Settings'),
-            ],
-          ),
-        ),
-      ),
+    return AppBottomNavBar(
+      currentLabel: 'Transactions',
     );
   }
 
   Widget _buildNavItem(BuildContext context, IconData icon, String label) {
-    return GestureDetector(
-      onTap: () {
-        if (label == 'Dashboard') {
-          Navigator.pop(context);
-        } else if (label == 'Accounts') {
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(builder: (context) => const AccountsScreen()),
-          );
-        }
-      },
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              icon,
-              color: Colors.white,
-              size: 24,
-            ),
-            const SizedBox(height: 4),
-            Text(
-              label,
-              style: const TextStyle(
-                fontSize: 12,
-                color: Colors.white,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
+    // Legacy method - dead code
+    return const SizedBox();
   }
 }

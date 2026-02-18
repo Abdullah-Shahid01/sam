@@ -27,6 +27,18 @@ class TransactionParser {
     'day before yesterday': -2,
   };
 
+  // Category keywords
+  static const Map<String, List<String>> _categoryKeywords = {
+    'Food': ['food', 'burger', 'pizza', 'restaurant', 'lunch', 'dinner', 'breakfast', 'groceries', 'supermarket', 'kfc', 'mcdonalds', 'starbucks', 'coffee', 'cafe', 'snack', 'drink'],
+    'Transport': ['transport', 'uber', 'taxi', 'bus', 'metro', 'fuel', 'petrol', 'gas', 'parking', 'careem', 'train', 'ticket'],
+    'Utilities': ['utilities', 'utility', 'dewa', 'etisalat', 'du', 'internet', 'phone', 'bill', 'electricity', 'water', 'wifi', 'mobile'],
+    'Rent': ['rent', 'housing', 'apartment'],
+    'Salary': ['salary', 'wages', 'paycheck', 'income'],
+    'Shopping': ['shopping', 'amazon', 'noon', 'clothes', 'shoes', 'mall', 'gift'],
+    'Entertainment': ['entertainment', 'movie', 'cinema', 'netflix', 'game', 'fun', 'subscription'],
+    'Health': ['health', 'doctor', 'pharmacy', 'medicine', 'gym', 'hospital'],
+  };
+
   /// Parse spoken text into transaction details
   /// [text] is the transcribed speech
   /// [availableAccounts] is the list of accounts to match against
@@ -60,6 +72,11 @@ class TransactionParser {
       matches++;
     }
 
+    // Extract Category
+    final category = _extractCategory(lowerText);
+    // Auto-set isFixed for certain categories
+    final isFixed = category == 'Rent' || category == 'Utilities'; // Simple heuristic
+
     // Calculate confidence based on matches
     // Amount is most important, then flow type, then account
     if (amount != null) confidence += 0.4;
@@ -73,9 +90,23 @@ class TransactionParser {
       isInflow: isInflow,
       date: date ?? DateTime.now(),
       description: text,
+      category: category ?? 'Uncategorized',
+      isFixed: isFixed,
       confidence: confidence,
       rawText: text,
     );
+  }
+
+  /// Extract category based on keywords
+  String? _extractCategory(String text) {
+    for (final entry in _categoryKeywords.entries) {
+      for (final keyword in entry.value) {
+        if (text.contains(keyword)) {
+          return entry.key;
+        }
+      }
+    }
+    return null;
   }
 
   /// Extract numeric amount from text
@@ -238,6 +269,37 @@ class TransactionParser {
         if (daysAgo <= 0) daysAgo += 7;
         
         return now.subtract(Duration(days: daysAgo));
+      }
+    }
+    
+    // Check for "on [Day] [Month]" format (e.g. "on 5th of November" or "on 5 November")
+    // Simple regex for "d/dd Month"
+    final monthNames = {
+      'january': 1, 'february': 2, 'march': 3, 'april': 4, 'may': 5, 'june': 6,
+      'july': 7, 'august': 8, 'september': 9, 'october': 10, 'november': 11, 'december': 12,
+      'jan': 1, 'feb': 2, 'mar': 3, 'apr': 4, 'jun': 6, 'jul': 7, 'aug': 8, 'sep': 9, 'oct': 10, 'nov': 11, 'dec': 12
+    };
+    
+    // Pattern: number (st/nd/rd/th)? (of)? month
+    final datePattern = RegExp(r'(\d{1,2})(?:st|nd|rd|th)?\s+(?:of\s+)?([a-z]+)');
+    final matches = datePattern.allMatches(text);
+    
+    for (final match in matches) {
+      final dayStr = match.group(1);
+      final monthStr = match.group(2)?.toLowerCase();
+      
+      if (dayStr != null && monthNames.containsKey(monthStr)) {
+        final day = int.parse(dayStr);
+        final month = monthNames[monthStr]!;
+        final now = DateTime.now();
+        // Assume current year unless it puts date in future, then past year? 
+        // Or assume past logic? "on 5th November" usually means the last one.
+        
+        DateTime candidate = DateTime(now.year, month, day);
+        if (candidate.isAfter(now)) {
+          candidate = DateTime(now.year - 1, month, day);
+        }
+        return candidate;
       }
     }
 

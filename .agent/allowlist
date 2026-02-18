@@ -1,0 +1,41 @@
+# URL Allowlist for Antigravity Agent
+# Only these domains are approved for external requests
+
+# Package Registries
+npmjs.com
+pypi.org
+crates.io
+nuget.org
+rubygems.org
+
+# Documentation
+docs.python.org
+developer.mozilla.org
+react.dev
+nodejs.org
+typescriptlang.org
+rust-lang.org
+
+# Version Control
+github.com
+gitlab.com
+bitbucket.org
+
+# Cloud Providers (docs only)
+cloud.google.com
+aws.amazon.com
+docs.microsoft.com
+
+# AI/ML Resources
+huggingface.co
+openai.com/docs
+anthropic.com/docs
+
+# Testing & CI
+stackoverflow.com
+
+# BLOCKED (never access):
+# - Any domain not listed above
+# - Personal data services
+# - Payment processors (production)
+# - Social media APIs (unless explicitly approved)

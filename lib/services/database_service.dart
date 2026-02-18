@@ -26,8 +26,9 @@ class DatabaseService {
 
       return await openDatabase(
         path,
-        version: 1,
+        version: 3,
         onCreate: _onCreate,
+        onUpgrade: _onUpgrade,
       );
     } catch (e) {
       print('Database initialization error: $e');
@@ -41,7 +42,8 @@ class DatabaseService {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL,
         type INTEGER NOT NULL,
-        balance REAL NOT NULL
+        balance REAL NOT NULL,
+        is_default INTEGER DEFAULT 0
       )
     ''');
 
@@ -53,9 +55,51 @@ class DatabaseService {
         amount REAL NOT NULL,
         date TEXT NOT NULL,
         description TEXT,
+        category TEXT DEFAULT 'Uncategorized',
+        is_fixed INTEGER DEFAULT 0,
+        merchant_handle TEXT,
+        frequency TEXT,
+        is_recurring INTEGER DEFAULT 0,
+        parent_id INTEGER,
         FOREIGN KEY (account_id) REFERENCES accounts (id)
       )
     ''');
+
+    await db.execute('''
+      CREATE TABLE monthly_balances (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        date TEXT NOT NULL,
+        asset_value REAL NOT NULL,
+        liability_value REAL NOT NULL,
+        net_worth REAL NOT NULL
+      )
+    ''');
+  }
+
+  Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
+    if (oldVersion < 2) {
+      await db.execute("ALTER TABLE transactions ADD COLUMN category TEXT DEFAULT 'Uncategorized'");
+      await db.execute("ALTER TABLE transactions ADD COLUMN is_fixed INTEGER DEFAULT 0");
+      await db.execute("ALTER TABLE transactions ADD COLUMN merchant_handle TEXT");
+      
+      await db.execute('''
+        CREATE TABLE monthly_balances (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          date TEXT NOT NULL,
+          asset_value REAL NOT NULL,
+          liability_value REAL NOT NULL,
+          net_worth REAL NOT NULL
+        )
+      ''');
+    }
+
+    if (oldVersion < 3) {
+      // v3 Migration
+      await db.execute("ALTER TABLE accounts ADD COLUMN is_default INTEGER DEFAULT 0");
+      await db.execute("ALTER TABLE transactions ADD COLUMN frequency TEXT");
+      await db.execute("ALTER TABLE transactions ADD COLUMN is_recurring INTEGER DEFAULT 0");
+      await db.execute("ALTER TABLE transactions ADD COLUMN parent_id INTEGER");
+    }
   }
 
   Future<int> insertAccount(Account account) async {
@@ -162,5 +206,91 @@ class DatabaseService {
       where: 'id = ?',
       whereArgs: [id],
     );
+  }
+
+  // Reporting Methods
+
+  Future<Map<String, double>> getExpensesByCategory(DateTime start, DateTime end, {bool excludeFixed = false}) async {
+    final db = await database;
+    
+    String whereClause = 'date >= ? AND date <= ? AND amount < 0';
+    List<dynamic> args = [start.toIso8601String(), end.toIso8601String()];
+
+    if (excludeFixed) {
+      whereClause += ' AND is_fixed = 0';
+    }
+
+    final List<Map<String, dynamic>> result = await db.rawQuery('''
+      SELECT category, SUM(amount) as total 
+      FROM transactions 
+      WHERE $whereClause
+      GROUP BY category
+    ''', args);
+
+    final Map<String, double> data = {};
+    for (var row in result) {
+      // Amount is negative, so flip it for the chart
+      data[row['category'] as String] = (row['total'] as double).abs();
+    }
+    
+    return data;
+  }
+
+  Future<Map<String, Map<String, double>>> getTrendData(DateTime start, DateTime end, {String groupBy = 'month'}) async {
+    final db = await database;
+    
+    // SQLite strftime('%Y-%m', date) extracts YYYY-MM
+    // %Y-%m-%d for day
+    final format = groupBy == 'day' ? '%Y-%m-%d' : '%Y-%m';
+    
+    final List<Map<String, dynamic>> result = await db.rawQuery('''
+      SELECT 
+        strftime('$format', date) as period,
+        SUM(CASE WHEN amount > 0 THEN amount ELSE 0 END) as income,
+        SUM(CASE WHEN amount < 0 THEN amount ELSE 0 END) as expense
+      FROM transactions
+      WHERE date >= ? AND date <= ?
+      GROUP BY period
+      ORDER BY period ASC
+    ''', [start.toIso8601String(), end.toIso8601String()]);
+
+    final Map<String, Map<String, double>> data = {};
+    
+    for (var row in result) {
+      final period = row['period'] as String;
+      final label = _formatLabel(period, groupBy);
+      data[label] = {
+        'income': (row['income'] as num?)?.toDouble() ?? 0.0,
+        'expense': (row['expense'] as num?)?.abs().toDouble() ?? 0.0,
+      };
+    }
+    
+    return data;
+  }
+  
+  String _formatLabel(String dateStr, String groupBy) {
+    // dateStr is either YYYY-MM or YYYY-MM-DD
+    try {
+      if (groupBy == 'month') {
+        final parts = dateStr.split('-');
+        final month = int.parse(parts[1]);
+        const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        return months[month - 1];
+      } else {
+        // Day: Display "DD" or "DD MMM"
+        // Let's parse it and return "dd" (e.g., "05", "12") to keep it short for bar chart 
+        final date = DateTime.parse(dateStr);
+        return '${date.day}';
+      }
+    } catch (e) {
+      return dateStr;
+    }
+  }
+
+  // Legacy method - kept for backward compatibility if needed, using the new valid range logic
+  Future<Map<String, Map<String, double>>> getMonthlyTotals(int months) async {
+    final end = DateTime.now();
+    final start = DateTime(end.year, end.month - months + 1, 1);
+    return getTrendData(start, end, groupBy: 'month');
   }
 }

@@ -3,7 +3,7 @@
 import 'package:flutter/material.dart';
 import '../models/account.dart';
 import '../services/database_service.dart';
-import 'transactions_screen.dart';
+import '../widgets/app_bottom_nav_bar.dart';
 
 class AccountsScreen extends StatefulWidget {
   const AccountsScreen({super.key});
@@ -201,69 +201,8 @@ class _AccountsScreenState extends State<AccountsScreen> {
   }
 
   Widget _buildBottomNavBar(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: const Color(0xFF1E2A3A),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.3),
-            blurRadius: 10,
-            offset: const Offset(0, -2),
-          ),
-        ],
-      ),
-      child: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: [
-              _buildNavItem(context, Icons.dashboard_outlined, 'Dashboard'),
-              _buildNavItem(context, Icons.account_balance_wallet_outlined, 'Accounts'),
-              _buildNavItem(context, Icons.receipt_long_outlined, 'Transactions'),
-              _buildNavItem(context, Icons.pie_chart_outline, 'Reports'),
-              _buildNavItem(context, Icons.settings_outlined, 'Settings'),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildNavItem(BuildContext context, IconData icon, String label) {
-    return GestureDetector(
-      onTap: () {
-        if (label == 'Dashboard') {
-          Navigator.pop(context);
-        } else if (label == 'Transactions') {
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(builder: (context) => const TransactionsScreen()),
-          );
-        }
-      },
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              icon,
-              color: Colors.white,
-              size: 24,
-            ),
-            const SizedBox(height: 4),
-            Text(
-              label,
-              style: const TextStyle(
-                fontSize: 12,
-                color: Colors.white,
-              ),
-            ),
-          ],
-        ),
-      ),
+    return const AppBottomNavBar(
+      currentLabel: 'Accounts',
     );
   }
 

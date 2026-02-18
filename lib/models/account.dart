@@ -19,12 +19,14 @@ class Account {
   final String name;
   final AccountType type;
   final double balance;
+  final bool isDefault;
 
   Account({
     this.id,
     required this.name,
     required this.type,
     required this.balance,
+    this.isDefault = false,
   });
 
   Map<String, dynamic> toMap() {
@@ -33,6 +35,7 @@ class Account {
       'name': name,
       'type': type.index,
       'balance': balance,
+      'is_default': isDefault ? 1 : 0,
     };
   }
 
@@ -42,6 +45,7 @@ class Account {
       name: map['name'] as String,
       type: AccountType.values[map['type'] as int],
       balance: map['balance'] as double,
+      isDefault: (map['is_default'] as int? ?? 0) == 1,
     );
   }
 }

@@ -7,6 +7,8 @@ class ParsedTransaction {
   final bool? isInflow;
   final DateTime? date;
   final String? description;
+  final String? category;
+  final bool isFixed;
   final double confidence; // 0.0 to 1.0
   final String rawText;
 
@@ -16,6 +18,8 @@ class ParsedTransaction {
     this.isInflow,
     this.date,
     this.description,
+    this.category,
+    this.isFixed = false,
     required this.confidence,
     required this.rawText,
   });
@@ -24,6 +28,6 @@ class ParsedTransaction {
 
   @override
   String toString() {
-    return 'ParsedTransaction(amount: $amount, account: $accountName, isInflow: $isInflow, date: $date, confidence: $confidence)';
+    return 'ParsedTransaction(amount: $amount, account: $accountName, isInflow: $isInflow, date: $date, category: $category, confidence: $confidence)';
   }
 }

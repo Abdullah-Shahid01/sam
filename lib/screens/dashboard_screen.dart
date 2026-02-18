@@ -10,7 +10,10 @@ import '../widgets/voice_input_dialog.dart';
 import '../config/theme.dart';
 import 'accounts_screen.dart';
 import 'transactions_screen.dart';
+import 'reports_screen.dart';
+import '../widgets/app_bottom_nav_bar.dart';
 import 'package:intl/intl.dart';
+import '../models/parsed_transaction.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -30,11 +33,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     _loadAccounts();
   }
 
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    _loadAccounts();
-  }
+  // Note: _loadAccounts is also called via onNavigateBack when returning from child screens
 
   Future<void> _loadAccounts() async {
     final accounts = await _databaseService.getAccounts();
@@ -124,75 +123,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  Widget _buildBottomNavBar(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: AppTheme.surfaceColor,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.2),
-            blurRadius: 20,
-            offset: const Offset(0, -5),
-          ),
-        ],
-      ),
-      child: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: [
-              _buildNavItem(context, Icons.dashboard_outlined, 'Dashboard'),
-              _buildNavItem(context, Icons.account_balance_wallet_outlined, 'Accounts'),
-              _buildNavItem(context, Icons.receipt_long_outlined, 'Transactions'),
-              _buildNavItem(context, Icons.pie_chart_outline, 'Reports'),
-              _buildNavItem(context, Icons.settings_outlined, 'Settings'),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
 
-  Widget _buildNavItem(BuildContext context, IconData icon, String label) {
-    return GestureDetector(
-      onTap: () async {
-        if (label == 'Accounts') {
-          await Navigator.push(
-            context,
-            MaterialPageRoute(builder: (context) => const AccountsScreen()),
-          );
-          _loadAccounts();
-        } else if (label == 'Transactions') {
-          await Navigator.push(
-            context,
-            MaterialPageRoute(builder: (context) => const TransactionsScreen()),
-          );
-          _loadAccounts();
-        }
-      },
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              icon,
-              color: Colors.white,
-              size: 24,
-            ),
-            const SizedBox(height: 4),
-            Text(
-              label,
-              style: const TextStyle(
-                fontSize: 12,
-                color: Colors.white,
-              ),
-            ),
-          ],
-        ),
-      ),
+
+  Widget _buildBottomNavBar(BuildContext context) {
+    return AppBottomNavBar(
+      currentLabel: 'Dashboard',
+      onNavigateBack: _loadAccounts,
     );
   }
 
@@ -239,6 +175,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
+
+
   void _showPhotoOptionsDialog(BuildContext context) {
     if (_accounts.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -250,6 +188,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
       );
       return;
     }
+    
+    // ... 
+
 
     showDialog(
       context: context,
@@ -327,7 +268,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
 
-  void _showAddTransactionDialog(BuildContext context) {
+  void _showAddTransactionDialog(BuildContext context, {ParsedTransaction? parsedData}) {
     if (_accounts.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -338,11 +279,39 @@ class _DashboardScreenState extends State<DashboardScreen> {
       return;
     }
 
-    final amountController = TextEditingController();
-    final descriptionController = TextEditingController();
-    DateTime selectedDate = DateTime.now();
-    Account? selectedAccount = _accounts.first;
-    bool isIncome = true;
+    final amountController = TextEditingController(
+      text: parsedData?.amount?.toString() ?? '',
+    );
+    final descriptionController = TextEditingController(
+      text: parsedData?.description ?? '',
+    );
+    DateTime selectedDate = parsedData?.date ?? DateTime.now();
+    
+    // account
+    Account? selectedAccount;
+    if (parsedData?.accountName != null) {
+      try {
+        selectedAccount = _accounts.firstWhere(
+          (a) => a.name.toLowerCase() == parsedData!.accountName!.toLowerCase()
+        );
+      } catch (e) {
+        selectedAccount = _accounts.first;
+      }
+    } else {
+      selectedAccount = _accounts.first;
+    }
+
+    // flow
+    bool isIncome = parsedData?.isInflow ?? true;
+    
+    // Category & Fixed
+    String selectedCategory = parsedData?.category ?? 'Uncategorized';
+    bool isFixed = parsedData?.isFixed ?? false;
+
+    final List<String> categories = [
+      'Uncategorized', 'Food', 'Transport', 'Utilities', 'Rent', 
+      'Salary', 'Shopping', 'Entertainment', 'Health', 'Other'
+    ];
 
     showDialog(
       context: context,
@@ -350,15 +319,202 @@ class _DashboardScreenState extends State<DashboardScreen> {
         return StatefulBuilder(
           builder: (context, setDialogState) {
             return AlertDialog(
-              backgroundColor: AppTheme.surfaceColor,
-              title: const Text('Add Transaction', style: TextStyle(color: Colors.white)),
+              backgroundColor: const Color(0xFF1E2A3A),
+              title: const Text(
+                'Add Transaction',
+                style: TextStyle(color: Colors.white),
+              ),
               content: SingleChildScrollView(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    // Date picker, In/Out toggle, Account dropdown, Amount, Description
-                    // ... (keeping the same dialog content as before)
-                    const Text('Transaction form would go here', style: TextStyle(color: Colors.white)),
+                    // Date Format
+                    GestureDetector(
+                      onTap: () async {
+                        final DateTime? picked = await showDatePicker(
+                          context: context,
+                          initialDate: selectedDate,
+                          firstDate: DateTime(2000),
+                          lastDate: DateTime(2100),
+                        );
+                        if (picked != null) {
+                          setDialogState(() {
+                            selectedDate = picked;
+                          });
+                        }
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF0F1419),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.white38),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text(
+                              'Date:',
+                              style: TextStyle(color: Colors.white70),
+                            ),
+                            Text(
+                              DateFormat('MMM dd, yyyy').format(selectedDate),
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+
+                    // Toggle In/Out
+                    Row(
+                      children: [
+                        Expanded(
+                          child: GestureDetector(
+                            onTap: () => setDialogState(() => isIncome = true),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              decoration: BoxDecoration(
+                                color: isIncome ? const Color(0xFF00B894) : Colors.transparent,
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(
+                                  color: isIncome ? Colors.transparent : Colors.white38,
+                                ),
+                              ),
+                              alignment: Alignment.center,
+                              child: const Text(
+                                'Income',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: GestureDetector(
+                            onTap: () => setDialogState(() => isIncome = false),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              decoration: BoxDecoration(
+                                color: !isIncome ? const Color(0xFFFF7675) : Colors.transparent,
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(
+                                  color: !isIncome ? Colors.transparent : Colors.white38,
+                                ),
+                              ),
+                              alignment: Alignment.center,
+                              child: const Text(
+                                'Expense',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+
+                    DropdownButtonFormField<Account>(
+                      value: selectedAccount,
+                      dropdownColor: const Color(0xFF1E2A3A),
+                      decoration: const InputDecoration(
+                        labelText: 'Account',
+                        labelStyle: TextStyle(color: Colors.white70),
+                        enabledBorder: UnderlineInputBorder(
+                          borderSide: BorderSide(color: Colors.white38),
+                        ),
+                        focusedBorder: UnderlineInputBorder(
+                          borderSide: BorderSide(color: Color(0xFF4A90E2)),
+                        ),
+                      ),
+                      items: _accounts.map((Account account) {
+                        return DropdownMenuItem<Account>(
+                          value: account,
+                          child: Text(
+                            account.name,
+                            style: const TextStyle(color: Colors.white),
+                          ),
+                        );
+                      }).toList(),
+                      onChanged: (Account? newValue) {
+                        setDialogState(() {
+                          selectedAccount = newValue;
+                        });
+                      },
+                    ),
+                    const SizedBox(height: 8),
+
+                    DropdownButtonFormField<String>(
+                      value: categories.contains(selectedCategory) ? selectedCategory : 'Uncategorized',
+                      dropdownColor: const Color(0xFF1E2A3A),
+                      decoration: const InputDecoration(
+                        labelText: 'Category',
+                        labelStyle: TextStyle(color: Colors.white70),
+                        enabledBorder: UnderlineInputBorder(
+                          borderSide: BorderSide(color: Colors.white38),
+                        ),
+                      ),
+                      items: categories.map((String cat) {
+                        return DropdownMenuItem<String>(
+                          value: cat,
+                          child: Text(cat, style: const TextStyle(color: Colors.white)),
+                        );
+                      }).toList(),
+                      onChanged: (String? newValue) {
+                        if (newValue != null) {
+                          setDialogState(() {
+                            selectedCategory = newValue;
+                            if (newValue == 'Rent' || newValue == 'Utilities') {
+                              isFixed = true;
+                            }
+                          });
+                        }
+                      },
+                    ),
+                    const SizedBox(height: 8),
+
+                    SwitchListTile(
+                      title: const Text('Fixed Cost', style: TextStyle(color: Colors.white70)),
+                      value: isFixed,
+                      activeColor: const Color(0xFF4A90E2),
+                      contentPadding: EdgeInsets.zero,
+                      onChanged: (bool value) => setDialogState(() => isFixed = value),
+                    ),
+                    
+                    TextField(
+                      controller: amountController,
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      style: const TextStyle(color: Colors.white),
+                      decoration: const InputDecoration(
+                        labelText: 'Amount',
+                        labelStyle: TextStyle(color: Colors.white70),
+                        enabledBorder: UnderlineInputBorder(
+                          borderSide: BorderSide(color: Colors.white38),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: descriptionController,
+                      style: const TextStyle(color: Colors.white),
+                      decoration: const InputDecoration(
+                        labelText: 'Description',
+                        labelStyle: TextStyle(color: Colors.white70),
+                        enabledBorder: UnderlineInputBorder(
+                          borderSide: BorderSide(color: Colors.white38),
+                        ),
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -368,8 +524,28 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   child: const Text('Cancel', style: TextStyle(color: Colors.white70)),
                 ),
                 TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text('Add', style: TextStyle(color: AppTheme.primaryColor)),
+                  onPressed: () async {
+                    if (amountController.text.isNotEmpty && selectedAccount != null) {
+                      final amount = double.tryParse(amountController.text);
+                      if (amount == null) return;
+                      final finalAmount = isIncome ? amount : -amount;
+                      
+                      final transaction = AppTransaction(
+                        transactionId: DateTime.now().millisecondsSinceEpoch.toString(),
+                        accountId: selectedAccount!.id!,
+                        amount: finalAmount,
+                        date: selectedDate,
+                        description: descriptionController.text.isEmpty ? null : descriptionController.text,
+                        category: selectedCategory,
+                        isFixed: isFixed,
+                      );
+                      
+                      await _databaseService.insertTransaction(transaction);
+                      Navigator.pop(context);
+                      _loadAccounts(); // Refresh
+                    }
+                  },
+                  child: const Text('Add', style: TextStyle(color: Color(0xFF4A90E2))),
                 ),
               ],
             );
