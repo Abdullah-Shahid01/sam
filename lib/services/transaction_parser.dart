@@ -42,7 +42,7 @@ class TransactionParser {
   /// Parse spoken text into transaction details
   /// [text] is the transcribed speech
   /// [availableAccounts] is the list of accounts to match against
-  ParsedTransaction parse(String text, List<Account> availableAccounts) {
+  ParsedTransaction parse(String text, List<Account> availableAccounts, {Account? defaultAccount}) {
     final lowerText = text.toLowerCase().trim();
     
     double confidence = 0.0;
@@ -61,7 +61,11 @@ class TransactionParser {
     }
 
     // Match account
-    final accountName = _matchAccount(lowerText, availableAccounts);
+    String? accountName = _matchAccount(lowerText, availableAccounts);
+    if (accountName == null && defaultAccount != null) {
+      accountName = defaultAccount.name;
+    }
+    
     if (accountName != null) {
       matches++;
     }

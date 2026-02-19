@@ -13,6 +13,14 @@ class DatabaseService {
 
   DatabaseService._internal();
 
+  static String _dbName = 'sam_v2.db';
+
+  /// For testing purposes only
+  static void setDatabaseName(String name) {
+    _dbName = name;
+    _database = null; // Reset connection
+  }
+
   Future<Database> get database async {
     if (_database != null) return _database!;
     _database = await _initDatabase();
@@ -22,11 +30,11 @@ class DatabaseService {
   Future<Database> _initDatabase() async {
     try {
       final dbPath = await getDatabasesPath();
-      final path = join(dbPath, 'sam_v2.db');
+      final path = join(dbPath, _dbName);
 
       return await openDatabase(
         path,
-        version: 3,
+        version: 4,
         onCreate: _onCreate,
         onUpgrade: _onUpgrade,
       );
@@ -61,6 +69,7 @@ class DatabaseService {
         frequency TEXT,
         is_recurring INTEGER DEFAULT 0,
         parent_id INTEGER,
+        recurring_day INTEGER,
         FOREIGN KEY (account_id) REFERENCES accounts (id)
       )
     ''');
@@ -99,6 +108,11 @@ class DatabaseService {
       await db.execute("ALTER TABLE transactions ADD COLUMN frequency TEXT");
       await db.execute("ALTER TABLE transactions ADD COLUMN is_recurring INTEGER DEFAULT 0");
       await db.execute("ALTER TABLE transactions ADD COLUMN parent_id INTEGER");
+    }
+
+    if (oldVersion < 4) {
+      // v4 Migration: recurring day picker support
+      await db.execute("ALTER TABLE transactions ADD COLUMN recurring_day INTEGER");
     }
   }
 
@@ -173,10 +187,43 @@ class DatabaseService {
     }
   }
 
-  Future<List<AppTransaction>> getTransactions() async {
+  Future<List<AppTransaction>> getTransactions({
+    DateTime? startDate,
+    DateTime? endDate,
+    String? category,
+  }) async {
     final db = await database;
+    
+    // Construct WHERE clause
+    String? whereClause;
+    List<dynamic>? whereArgs;
+
+    if (startDate != null || endDate != null || category != null) {
+       List<String> conditions = [];
+       whereArgs = [];
+
+       if (startDate != null) {
+         conditions.add('date >= ?');
+         whereArgs.add(startDate.toIso8601String());
+       }
+       
+       if (endDate != null) {
+         conditions.add('date <= ?');
+         whereArgs.add(endDate.toIso8601String());
+       }
+       
+       if (category != null) {
+         conditions.add('category = ?');
+         whereArgs.add(category);
+       }
+       
+       whereClause = conditions.join(' AND ');
+    }
+
     final List<Map<String, dynamic>> maps = await db.query(
       'transactions',
+      where: whereClause,
+      whereArgs: whereArgs,
       orderBy: 'date DESC',
     );
 
@@ -208,6 +255,129 @@ class DatabaseService {
     );
   }
 
+  // Default Account Logic
+
+  Future<void> setDefaultAccount(int accountId) async {
+    final db = await database;
+    await db.transaction((txn) async {
+      // Clear existing default
+      await txn.rawUpdate('UPDATE accounts SET is_default = 0');
+      // Set new default
+      await txn.rawUpdate('UPDATE accounts SET is_default = 1 WHERE id = ?', [accountId]);
+    });
+  }
+
+  Future<Account?> getDefaultAccount() async {
+    final db = await database;
+    final List<Map<String, dynamic>> maps = await db.query(
+      'accounts',
+      where: 'is_default = 1',
+      limit: 1,
+    );
+
+    if (maps.isNotEmpty) {
+      return Account.fromMap(maps.first);
+    }
+    return null;
+  }
+
+  Future<void> checkRecurringTransactions() async {
+    final db = await database;
+    
+    // 1. Get all recurring templates
+    final List<Map<String, dynamic>> templates = await db.query(
+      'transactions',
+      where: 'is_recurring = 1',
+    );
+
+    for (var templateMap in templates) {
+      final template = AppTransaction.fromMap(templateMap);
+      if (template.frequency == null || template.frequency == 'None') continue;
+
+      // 2. Find the last generated transaction for this template
+      final List<Map<String, dynamic>> lastChild = await db.query(
+        'transactions',
+        where: 'parent_id = ?',
+        whereArgs: [template.id],
+        orderBy: 'date DESC',
+        limit: 1,
+      );
+
+      DateTime lastDate;
+      if (lastChild.isNotEmpty) {
+        lastDate = DateTime.parse(lastChild.first['date'] as String);
+      } else {
+        // If no children yet, the "last date" is the template's creation date
+        lastDate = template.date;
+      }
+
+      // 3. Calculate next due date
+      DateTime nextDate = _calculateNextDate(lastDate, template.frequency!, template.recurringDay);
+      final now = DateTime.now();
+
+      // 4. Generate transactions if due
+      // Use a loop to catch up if multiple periods missed (e.g., user didn't open app for a month)
+      // Limit to 12 to prevent infinite loops in case of logic error
+      int safeguard = 0;
+      while (nextDate.isBefore(now) || nextDate.isAtSameMomentAs(now)) {
+        if (safeguard > 12) break; 
+        
+        final newTx = AppTransaction(
+          transactionId: DateTime.now().millisecondsSinceEpoch.toString() + '_$safeguard',
+          accountId: template.accountId,
+          amount: template.amount,
+          date: nextDate,
+          description: template.description,
+          category: template.category,
+          isFixed: template.isFixed,
+          merchantHandle: template.merchantHandle,
+          parentId: template.id,
+          isRecurring: false,
+          recurringDay: template.recurringDay,
+        );
+
+        await insertTransaction(newTx);
+        
+        // Advance to next period
+        lastDate = nextDate;
+        nextDate = _calculateNextDate(lastDate, template.frequency!, template.recurringDay);
+        safeguard++;
+      }
+    }
+  }
+
+  DateTime _calculateNextDate(DateTime from, String frequency, [int? recurringDay]) {
+    switch (frequency.toLowerCase()) {
+      case 'daily':
+        return from.add(const Duration(days: 1));
+      case 'weekly':
+        if (recurringDay != null && recurringDay >= 1 && recurringDay <= 7) {
+          // recurringDay: 1=Mon, 7=Sun (matches DateTime.monday..sunday)
+          int daysUntil = recurringDay - from.weekday;
+          if (daysUntil <= 0) daysUntil += 7; // always advance to next week
+          return from.add(Duration(days: daysUntil));
+        }
+        return from.add(const Duration(days: 7));
+      case 'monthly':
+        final nextMonth = DateTime(from.year, from.month + 1, 1);
+        if (recurringDay != null && recurringDay >= 1) {
+          // Clamp to last day of the next month
+          final lastDayOfMonth = DateTime(nextMonth.year, nextMonth.month + 1, 0).day;
+          final day = recurringDay > lastDayOfMonth ? lastDayOfMonth : recurringDay;
+          return DateTime(nextMonth.year, nextMonth.month, day);
+        }
+        return DateTime(from.year, from.month + 1, from.day);
+      case 'yearly':
+        if (recurringDay != null && recurringDay >= 1) {
+          // recurringDay stores the day-of-month, month comes from template's original date
+          return DateTime(from.year + 1, from.month, recurringDay);
+        }
+        return DateTime(from.year + 1, from.month, from.day);
+      default:
+        return from.add(const Duration(days: 30)); // Fallback
+    }
+  }
+
   // Reporting Methods
 
   Future<Map<String, double>> getExpensesByCategory(DateTime start, DateTime end, {bool excludeFixed = false}) async {
@@ -229,11 +399,32 @@ class DatabaseService {
 
     final Map<String, double> data = {};
     for (var row in result) {
-      // Amount is negative, so flip it for the chart
-      data[row['category'] as String] = (row['total'] as double).abs();
+      if (row['total'] != null) {
+        if (row['category'] != null) {
+           data[row['category'] as String] = (row['total'] as num).toDouble().abs();
+        }
+      }
     }
     
     return data;
+  }
+
+  Future<List<AppTransaction>> getTopSpenders(DateTime start, DateTime end, {int limit = 3}) async {
+    final db = await database;
+    
+    // Amount < 0 for expenses. We want the "largest" expense, which is the most negative number.
+    // So order by amount ASC (e.g. -500, -100, -50).
+    final List<Map<String, dynamic>> maps = await db.query(
+      'transactions',
+      where: 'date >= ? AND date <= ? AND amount < 0',
+      whereArgs: [start.toIso8601String(), end.toIso8601String()],
+      orderBy: 'amount ASC',
+      limit: limit,
+    );
+
+    return List.generate(maps.length, (i) {
+      return AppTransaction.fromMap(maps[i]);
+    });
   }
 
   Future<Map<String, Map<String, double>>> getTrendData(DateTime start, DateTime end, {String groupBy = 'month'}) async {

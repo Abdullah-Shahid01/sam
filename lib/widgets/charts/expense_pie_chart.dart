@@ -5,11 +5,13 @@ import '../../config/theme.dart';
 class ExpensePieChart extends StatefulWidget {
   final Map<String, double> data;
   final bool animate;
+  final Function(String category)? onCategoryTap;
 
   const ExpensePieChart({
     super.key,
     required this.data,
     this.animate = true,
+    this.onCategoryTap,
   });
 
   @override
@@ -63,6 +65,18 @@ class _ExpensePieChartState extends State<ExpensePieChart> {
                     PieChartData(
                       pieTouchData: PieTouchData(
                         touchCallback: (FlTouchEvent event, pieTouchResponse) {
+                          // Capture tap info before setState
+                          String? tappedCategory;
+                          
+                          if (event is FlTapUpEvent &&
+                              pieTouchResponse != null &&
+                              pieTouchResponse.touchedSection != null) {
+                            final idx = pieTouchResponse.touchedSection!.touchedSectionIndex;
+                            if (idx >= 0 && idx < entries.length && widget.onCategoryTap != null) {
+                              tappedCategory = entries[idx].key;
+                            }
+                          }
+
                           setState(() {
                             if (!event.isInterestedForInteractions ||
                                 pieTouchResponse == null ||
@@ -73,6 +87,13 @@ class _ExpensePieChartState extends State<ExpensePieChart> {
                             touchedIndex = pieTouchResponse
                                 .touchedSection!.touchedSectionIndex;
                           });
+
+                          // Fire navigation AFTER setState, not inside it
+                          if (tappedCategory != null) {
+                            WidgetsBinding.instance.addPostFrameCallback((_) {
+                              widget.onCategoryTap!(tappedCategory!);
+                            });
+                          }
                         },
                       ),
                       borderData: FlBorderData(show: false),

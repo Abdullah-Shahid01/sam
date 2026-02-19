@@ -3,6 +3,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'config/theme.dart';
+import 'services/database_service.dart';
 import 'screens/dashboard_screen.dart';
 
 // Conditional import for platform-specific setup
@@ -12,6 +13,13 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
   await initializePlatform();
+  
+  // Check for recurring transactions
+  try {
+    await DatabaseService().checkRecurringTransactions();
+  } catch (e) {
+    debugPrint('Error checking recurring transactions: $e');
+  }
   
   runApp(const SAMApp());
 }

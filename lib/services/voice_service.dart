@@ -12,6 +12,9 @@ class VoiceService {
   bool _isInitialized = false;
   bool _isListening = false;
   String _lastError = '';
+  
+  // Store callback so _onStatus/_onError can notify the UI
+  Function(bool isListening)? _onListeningStateChanged;
 
   factory VoiceService() => _instance;
 
@@ -45,15 +48,22 @@ class VoiceService {
     required Function(String text, bool isFinal) onResult,
     Function(bool isListening)? onListeningStateChanged,
   }) async {
-    if (!_isInitialized) {
-      final success = await initialize();
-      if (!success) {
-        _lastError = 'Speech recognition not available';
-        return;
-      }
+    // Store callback for status/error propagation
+    _onListeningStateChanged = onListeningStateChanged;
+    
+    // Force full reset: cancel any existing session and re-initialize
+    try {
+      await _speechToText.cancel();
+    } catch (_) {}
+    _isListening = false;
+    
+    // Re-initialize the speech engine fresh each time
+    _isInitialized = false;
+    final success = await initialize();
+    if (!success) {
+      _lastError = 'Speech recognition not available';
+      return;
     }
-
-    if (_isListening) return;
 
     _isListening = true;
     onListeningStateChanged?.call(true);
@@ -76,22 +86,27 @@ class VoiceService {
     
     await _speechToText.stop();
     _isListening = false;
+    _onListeningStateChanged?.call(false);
   }
 
   /// Cancel listening without processing
   Future<void> cancelListening() async {
     await _speechToText.cancel();
     _isListening = false;
+    _onListeningStateChanged?.call(false);
+    _onListeningStateChanged = null;
   }
 
   void _onError(SpeechRecognitionError error) {
     _lastError = error.errorMsg;
     _isListening = false;
+    _onListeningStateChanged?.call(false);
   }
 
   void _onStatus(String status) {
     if (status == 'done' || status == 'notListening') {
       _isListening = false;
+      _onListeningStateChanged?.call(false);
     }
   }
 

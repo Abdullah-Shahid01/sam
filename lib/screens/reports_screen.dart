@@ -3,9 +3,14 @@ import '../config/theme.dart';
 import '../widgets/charts/expense_pie_chart.dart';
 import '../widgets/charts/income_expense_bar_chart.dart';
 import '../widgets/app_bottom_nav_bar.dart';
-import 'dashboard_screen.dart'; // For navigation overrides if needed, or just standard nav structure
+import 'dashboard_screen.dart';
+import 'transactions_screen.dart';
+import '../models/transaction.dart';
+import '../models/account.dart';
+import '../services/csv_export_service.dart';
 
 import '../services/database_service.dart';
+import 'package:intl/intl.dart';
 
 class ReportsScreen extends StatefulWidget {
   const ReportsScreen({super.key});
@@ -17,12 +22,16 @@ class ReportsScreen extends StatefulWidget {
 class _ReportsScreenState extends State<ReportsScreen> {
   final DatabaseService _databaseService = DatabaseService();
   
-  String _selectedPeriod = 'This Month';
+  DateTimeRange _selectedDateRange = DateTimeRange(
+    start: DateTime(DateTime.now().year, DateTime.now().month, 1),
+    end: DateTime.now(),
+  );
   bool _excludeFixed = false;
   bool _isLoading = true;
 
   Map<String, double> _expenseData = {};
   Map<String, Map<String, double>> _barData = {};
+  List<AppTransaction> _topSpenders = [];
 
   @override
   void initState() {
@@ -34,32 +43,34 @@ class _ReportsScreenState extends State<ReportsScreen> {
     setState(() => _isLoading = true);
 
     try {
-      final range = _getDateRange(_selectedPeriod);
-      
       // Load Pie Chart Data
       final expenses = await _databaseService.getExpensesByCategory(
-        range.start, 
-        range.end, 
+        _selectedDateRange.start, 
+        _selectedDateRange.end, 
         excludeFixed: _excludeFixed
       );
       
-      // Load Bar Chart Data (Trend)
-      // If period is <= 1 month, show daily trend. Else show monthly trend.
-      String groupBy = 'month';
-      if (_selectedPeriod == 'This Month' || _selectedPeriod == 'Last Month') {
-        groupBy = 'day';
-      }
+      // Load Bar Chart Data
+      final days = _selectedDateRange.end.difference(_selectedDateRange.start).inDays;
+      String groupBy = days <= 31 ? 'day' : 'month';
       
       final barData = await _databaseService.getTrendData(
-        range.start,
-        range.end,
+        _selectedDateRange.start,
+        _selectedDateRange.end,
         groupBy: groupBy
+      );
+
+      // Load Top Spenders
+      final topSpenders = await _databaseService.getTopSpenders(
+        _selectedDateRange.start,
+        _selectedDateRange.end
       );
 
       if (mounted) {
         setState(() {
           _expenseData = expenses;
           _barData = barData;
+          _topSpenders = topSpenders;
           _isLoading = false;
         });
       }
@@ -69,33 +80,30 @@ class _ReportsScreenState extends State<ReportsScreen> {
     }
   }
 
-  DateTimeRange _getDateRange(String period) {
-    final now = DateTime.now();
-    switch (period) {
-      case 'This Month':
-        return DateTimeRange(
-          start: DateTime(now.year, now.month, 1),
-          end: now,
+  Future<void> _selectDateRange() async {
+    final picked = await showDateRangePicker(
+      context: context,
+      firstDate: DateTime(2020),
+      lastDate: DateTime.now(),
+      initialDateRange: _selectedDateRange,
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: const ColorScheme.dark(
+              primary: Color(0xFF4A90E2),
+              onPrimary: Colors.white,
+              surface: Color(0xFF1E2A3A),
+              onSurface: Colors.white,
+            ),
+          ),
+          child: child!,
         );
-      case 'Last Month':
-        final start = DateTime(now.year, now.month - 1, 1);
-        final end = DateTime(now.year, now.month, 0); // Last day of prev month
-        return DateTimeRange(start: start, end: end);
-      case '3 Months':
-        return DateTimeRange(
-          start: DateTime(now.year, now.month - 2, 1),
-          end: now,
-        );
-      case 'Year':
-        return DateTimeRange(
-          start: DateTime(now.year, 1, 1),
-          end: now,
-        );
-      default:
-        return DateTimeRange(
-          start: DateTime(now.year, now.month, 1),
-          end: now,
-        );
+      },
+    );
+
+    if (picked != null) {
+      setState(() => _selectedDateRange = picked);
+      _loadData();
     }
   }
 
@@ -125,7 +133,21 @@ class _ReportsScreenState extends State<ReportsScreen> {
                     ),
                   ),
                   const SizedBox(height: 16),
-                  ExpensePieChart(data: _expenseData),
+                  ExpensePieChart(
+                    data: _expenseData,
+                    onCategoryTap: (category) {
+                       Navigator.push(
+                         context,
+                         MaterialPageRoute(
+                           builder: (_) => TransactionsScreen(
+                             startDate: _selectedDateRange.start,
+                             endDate: _selectedDateRange.end,
+                             category: category,
+                           ),
+                         ),
+                       );
+                    },
+                  ),
                   
                   const SizedBox(height: 40),
                   
@@ -139,6 +161,62 @@ class _ReportsScreenState extends State<ReportsScreen> {
                   ),
                   const SizedBox(height: 16),
                   IncomeExpenseBarChart(data: _barData),
+
+                  const SizedBox(height: 40),
+                  
+                  if (_topSpenders.isNotEmpty) ...[
+                    const Text(
+                      'Hall of Shame 🏆',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Container(
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF1E2A3A),
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: ListView.separated(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        itemCount: _topSpenders.length,
+                        separatorBuilder: (context, index) => const Divider(color: Colors.white10, height: 1),
+                        itemBuilder: (context, index) {
+                          final tx = _topSpenders[index];
+                          return ListTile(
+                            leading: Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: const BoxDecoration(
+                                color: Color(0xFF2D3748),
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Icon(Icons.attach_money, color: Colors.white70, size: 20),
+                            ),
+                            title: Text(
+                              tx.description ?? 'Expense',
+                              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w500),
+                            ),
+                            subtitle: Text(
+                              DateFormat('MMM d').format(tx.date),
+                              style: const TextStyle(color: Colors.white54, fontSize: 12),
+                            ),
+                            trailing: Text(
+                              'AED ${tx.amount.abs().toStringAsFixed(0)}',
+                              style: const TextStyle(
+                                color: Color(0xFFFF7675),
+                                fontWeight: FontWeight.bold,
+                                fontSize: 16,
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                  ],
                 ],
               ),
             ),
@@ -148,13 +226,48 @@ class _ReportsScreenState extends State<ReportsScreen> {
   }
 
   Widget _buildHeader() {
-    return const Text(
-      'Reports',
-      style: TextStyle(
-        fontSize: 32,
-        fontWeight: FontWeight.bold,
-        color: Colors.white,
-      ),
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        const Text(
+          'Reports',
+          style: TextStyle(
+            fontSize: 32,
+            fontWeight: FontWeight.bold,
+            color: Colors.white,
+          ),
+        ),
+        Container(
+          decoration: BoxDecoration(
+            color: const Color(0xFF1E2A3A),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.white12),
+          ),
+          child: IconButton(
+            icon: const Icon(Icons.download, color: Colors.white70),
+            tooltip: 'Export CSV',
+            onPressed: () async {
+              if (_isLoading) return;
+              
+              // Fetch all transactions for this period
+              final allTransactions = await _databaseService.getTransactions(
+                startDate: _selectedDateRange.start,
+                endDate: _selectedDateRange.end,
+              );
+              
+              final accounts = await _databaseService.getAccounts();
+              
+              if (mounted) {
+                await CsvExportService().exportCsv(
+                  context, 
+                  allTransactions, 
+                  accounts: accounts
+                );
+              }
+            },
+          ),
+        ),
+      ],
     );
   }
 
@@ -165,26 +278,38 @@ class _ReportsScreenState extends State<ReportsScreen> {
       spacing: 16,
       runSpacing: 16,
       children: [
-        DropdownButton<String>(
-          value: _selectedPeriod,
-          dropdownColor: AppTheme.surfaceColor,
-          underline: Container(),
-          icon: const Icon(Icons.arrow_drop_down, color: Colors.white),
-          style: const TextStyle(color: Colors.white, fontSize: 16),
-          items: ['This Month', 'Last Month', '3 Months', 'Year']
-              .map((e) => DropdownMenuItem(value: e, child: Text(e)))
-              .toList(),
-          onChanged: (val) {
-            if (val != null) {
-              setState(() => _selectedPeriod = val);
-              _loadData();
-            }
-          },
+        InkWell(
+          onTap: _selectDateRange,
+          borderRadius: BorderRadius.circular(8),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: const Color(0xFF1E2A3A),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.white12),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.calendar_today, color: Color(0xFF4A90E2), size: 16),
+                const SizedBox(width: 8),
+                Text(
+                  '${DateFormat('MMM d').format(_selectedDateRange.start)} - ${DateFormat('MMM d').format(_selectedDateRange.end)}',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                const Icon(Icons.arrow_drop_down, color: Colors.white54),
+              ],
+            ),
+          ),
         ),
         Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Text('Exclude Fixed', style: TextStyle(color: Colors.white70)),
+            const Text('Exclude Recurring', style: TextStyle(color: Colors.white70)),
             Switch(
               value: _excludeFixed,
               activeColor: AppTheme.primaryColor,

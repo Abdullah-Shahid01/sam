@@ -13,6 +13,7 @@ class AppTransaction {
   final String? frequency; // 'daily', 'weekly', 'monthly', 'yearly'
   final bool isRecurring;
   final int? parentId;
+  final int? recurringDay; // 1-7 (Mon=1) for weekly, 1-31 for monthly/yearly
 
   AppTransaction({
     this.id,
@@ -27,6 +28,7 @@ class AppTransaction {
     this.frequency,
     this.isRecurring = false,
     this.parentId,
+    this.recurringDay,
   });
 
   Map<String, dynamic> toMap() {
@@ -43,6 +45,7 @@ class AppTransaction {
       'frequency': frequency,
       'is_recurring': isRecurring ? 1 : 0,
       'parent_id': parentId,
+      'recurring_day': recurringDay,
     };
   }
 
@@ -60,6 +63,7 @@ class AppTransaction {
       frequency: map['frequency'] as String?,
       isRecurring: (map['is_recurring'] as int? ?? 0) == 1,
       parentId: map['parent_id'] as int?,
+      recurringDay: map['recurring_day'] as int?,
     );
   }
 }

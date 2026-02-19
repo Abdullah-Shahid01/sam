@@ -16,7 +16,16 @@ import '../widgets/app_bottom_nav_bar.dart';
 import 'reports_screen.dart';
 
 class TransactionsScreen extends StatefulWidget {
-  const TransactionsScreen({super.key});
+  final DateTime? startDate;
+  final DateTime? endDate;
+  final String? category;
+
+  const TransactionsScreen({
+    super.key,
+    this.startDate,
+    this.endDate,
+    this.category,
+  });
 
   @override
   State<TransactionsScreen> createState() => _TransactionsScreenState();
@@ -46,7 +55,11 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
   }
 
   Future<void> _loadData() async {
-    final transactions = await _databaseService.getTransactions();
+    final transactions = await _databaseService.getTransactions(
+      startDate: widget.startDate,
+      endDate: widget.endDate,
+      category: widget.category,
+    );
     final accounts = await _databaseService.getAccounts();
     if (mounted) {
       setState(() {
@@ -85,6 +98,35 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
                   ),
                 ],
               ),
+              if (widget.category != null || widget.startDate != null) ...[
+                const SizedBox(height: 16),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF4A90E2).withOpacity(0.2),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: const Color(0xFF4A90E2).withOpacity(0.5)),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.filter_list, color: Color(0xFF4A90E2), size: 16),
+                      const SizedBox(width: 8),
+                      Text(
+                        _buildFilterText(),
+                        style: const TextStyle(color: Color(0xFF4A90E2), fontWeight: FontWeight.bold),
+                      ),
+                      const SizedBox(width: 8),
+                      GestureDetector(
+                        onTap: () {
+                           Navigator.pop(context);
+                        },
+                        child: const Icon(Icons.close, color: Color(0xFF4A90E2), size: 16),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
               const SizedBox(height: 24),
               Expanded(
                 child: _isLoading
@@ -103,9 +145,14 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
                             itemCount: _transactions.length,
                             itemBuilder: (context, index) {
                               final transaction = _transactions[index];
+                              final accountName = _accounts
+                                  .where((a) => a.id == transaction.accountId)
+                                  .map((a) => a.name)
+                                  .firstOrNull ?? 'Account ${transaction.accountId}';
+                              final isExpense = transaction.amount < 0;
                               return Container(
-                                margin: const EdgeInsets.only(bottom: 16),
-                                padding: const EdgeInsets.all(20),
+                                margin: const EdgeInsets.only(bottom: 12),
+                                padding: const EdgeInsets.all(16),
                                 decoration: BoxDecoration(
                                   color: const Color(0xFF1E2A3A),
                                   borderRadius: BorderRadius.circular(16),
@@ -113,45 +160,50 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
+                                    // Row 1: Date + Amount
                                     Row(
                                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                       children: [
                                         Text(
                                           DateFormat('MMM dd, yyyy').format(transaction.date),
                                           style: const TextStyle(
-                                            fontSize: 14,
+                                            fontSize: 13,
                                             color: Colors.white54,
                                           ),
                                         ),
                                         Text(
-                                          'AED ${transaction.amount.toStringAsFixed(2)}',
-                                          style: const TextStyle(
-                                            fontSize: 20,
+                                          'AED ${transaction.amount.abs().toStringAsFixed(2)}',
+                                          style: TextStyle(
+                                            fontSize: 18,
                                             fontWeight: FontWeight.bold,
-                                            color: Colors.white,
+                                            color: isExpense ? const Color(0xFFFF7675) : const Color(0xFF00B894),
                                           ),
                                         ),
                                       ],
                                     ),
                                     const SizedBox(height: 8),
+                                    // Row 2: Description or Account name
                                     Text(
-                                      'Account ID: ${transaction.accountId}',
+                                      transaction.description ?? accountName,
                                       style: const TextStyle(
-                                        fontSize: 16,
+                                        fontSize: 15,
                                         fontWeight: FontWeight.w600,
                                         color: Colors.white,
                                       ),
                                     ),
-                                    if (transaction.description != null) ...[
-                                      const SizedBox(height: 4),
-                                      Text(
-                                        transaction.description!,
-                                        style: const TextStyle(
-                                          fontSize: 14,
-                                          color: Colors.white70,
-                                        ),
-                                      ),
-                                    ],
+                                    const SizedBox(height: 8),
+                                    // Row 3: Chips (Category + Account + Recurring badge)
+                                    Wrap(
+                                      spacing: 8,
+                                      runSpacing: 6,
+                                      children: [
+                                        if (transaction.category != null)
+                                          _buildChip(transaction.category!, Icons.label_outline),
+                                        _buildChip(accountName, Icons.account_balance_wallet_outlined),
+                                        if (transaction.isRecurring && transaction.frequency != null)
+                                          _buildChip('🔁 ${transaction.frequency}', null, color: const Color(0xFF6C5CE7)),
+                                      ],
+                                    ),
                                   ],
                                 ),
                               );
@@ -436,6 +488,41 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
           ),
         ),
       ],
+    );
+  }
+
+  String _buildFilterText() {
+    List<String> parts = [];
+    if (widget.category != null) parts.add(widget.category!);
+    
+    if (widget.startDate != null && widget.endDate != null) {
+      parts.add('${DateFormat('MMM d').format(widget.startDate!)} - ${DateFormat('MMM d').format(widget.endDate!)}');
+    }
+    
+    return parts.join(' • ');
+  }
+
+  Widget _buildChip(String label, IconData? icon, {Color color = const Color(0xFF2D3748)}) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.3),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: color.withOpacity(0.5)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (icon != null) ...[
+            Icon(icon, size: 12, color: Colors.white70),
+            const SizedBox(width: 4),
+          ],
+          Text(
+            label,
+            style: const TextStyle(color: Colors.white70, fontSize: 11, fontWeight: FontWeight.w500),
+          ),
+        ],
+      ),
     );
   }
 
@@ -725,14 +812,18 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
     // flow
     bool isIncome = parsedData?.isInflow ?? true;
     
-    // Category & Fixed
+    // Category & Frequency
     String selectedCategory = parsedData?.category ?? 'Uncategorized';
-    bool isFixed = parsedData?.isFixed ?? false;
+    String selectedFrequency = 'None';
+    final List<String> frequencies = ['None', 'Daily', 'Weekly', 'Monthly', 'Yearly'];
 
     final List<String> categories = [
       'Uncategorized', 'Food', 'Transport', 'Utilities', 'Rent', 
       'Salary', 'Shopping', 'Entertainment', 'Health', 'Other'
     ];
+
+    String? errorText;
+    int? selectedRecurringDay;
 
     showDialog(
       context: context,
@@ -915,28 +1006,163 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
                         if (newValue != null) {
                           setDialogState(() {
                             selectedCategory = newValue;
-                            // Auto-set isFixed for simple heuristic if user changes manually
-                             if (newValue == 'Rent' || newValue == 'Utilities') {
-                               isFixed = true;
-                             }
                           });
                         }
                       },
                     ),
-                    const SizedBox(height: 8),
+                    const SizedBox(height: 16),
 
-                    // isFixed Switch
-                    SwitchListTile(
-                      title: const Text('Fixed Cost', style: TextStyle(color: Colors.white70)),
-                      value: isFixed,
-                      activeColor: const Color(0xFF4A90E2),
-                      contentPadding: EdgeInsets.zero,
-                      onChanged: (bool value) {
-                        setDialogState(() {
-                          isFixed = value;
-                        });
+                    // Frequency Dropdown
+                    DropdownButtonFormField<String>(
+                      value: selectedFrequency,
+                      dropdownColor: const Color(0xFF1E2A3A),
+                      decoration: const InputDecoration(
+                        labelText: 'Recurring Frequency',
+                        labelStyle: TextStyle(color: Colors.white70),
+                        enabledBorder: UnderlineInputBorder(
+                          borderSide: BorderSide(color: Colors.white38),
+                        ),
+                        focusedBorder: UnderlineInputBorder(
+                          borderSide: BorderSide(color: Color(0xFF4A90E2)),
+                        ),
+                      ),
+                      items: frequencies.map((String freq) {
+                        return DropdownMenuItem<String>(
+                          value: freq,
+                          child: Text(
+                            freq,
+                            style: const TextStyle(color: Colors.white),
+                          ),
+                        );
+                      }).toList(),
+                      onChanged: (String? newValue) {
+                        if (newValue != null) {
+                          setDialogState(() {
+                            selectedFrequency = newValue;
+                            selectedRecurringDay = null; // Reset when frequency changes
+                          });
+                        }
                       },
                     ),
+
+                    // Contextual Day Picker (appears when frequency is Weekly/Monthly/Yearly)
+                    if (selectedFrequency == 'Weekly') ...[
+                      const SizedBox(height: 12),
+                      const Text('Repeats on:', style: TextStyle(color: Colors.white70, fontSize: 13)),
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 6,
+                        children: List.generate(7, (i) {
+                          final dayNum = i + 1; // 1=Mon .. 7=Sun
+                          final dayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+                          final isSelected = selectedRecurringDay == dayNum;
+                          return GestureDetector(
+                            onTap: () => setDialogState(() => selectedRecurringDay = dayNum),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                              decoration: BoxDecoration(
+                                color: isSelected ? const Color(0xFF4A90E2) : const Color(0xFF0F1419),
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(
+                                  color: isSelected ? const Color(0xFF4A90E2) : Colors.white38,
+                                ),
+                              ),
+                              child: Text(
+                                dayNames[i],
+                                style: TextStyle(
+                                  color: isSelected ? Colors.white : Colors.white70,
+                                  fontSize: 12,
+                                  fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                                ),
+                              ),
+                            ),
+                          );
+                        }),
+                      ),
+                    ],
+
+                    if (selectedFrequency == 'Monthly') ...[
+                      const SizedBox(height: 12),
+                      const Text('Day of month:', style: TextStyle(color: Colors.white70, fontSize: 13)),
+                      const SizedBox(height: 8),
+                      SizedBox(
+                        height: 40,
+                        child: ListView.builder(
+                          scrollDirection: Axis.horizontal,
+                          itemCount: 31,
+                          itemBuilder: (context, i) {
+                            final day = i + 1;
+                            final isSelected = selectedRecurringDay == day;
+                            return GestureDetector(
+                              onTap: () => setDialogState(() => selectedRecurringDay = day),
+                              child: Container(
+                                width: 36,
+                                margin: const EdgeInsets.only(right: 6),
+                                decoration: BoxDecoration(
+                                  color: isSelected ? const Color(0xFF4A90E2) : const Color(0xFF0F1419),
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(
+                                    color: isSelected ? const Color(0xFF4A90E2) : Colors.white38,
+                                  ),
+                                ),
+                                child: Center(
+                                  child: Text(
+                                    '$day',
+                                    style: TextStyle(
+                                      color: isSelected ? Colors.white : Colors.white70,
+                                      fontSize: 13,
+                                      fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                    ],
+
+                    if (selectedFrequency == 'Yearly') ...[
+                      const SizedBox(height: 12),
+                      GestureDetector(
+                        onTap: () async {
+                          final picked = await showDatePicker(
+                            context: context,
+                            initialDate: DateTime(2024, selectedDate.month, selectedRecurringDay ?? selectedDate.day),
+                            firstDate: DateTime(2024, 1, 1),
+                            lastDate: DateTime(2024, 12, 31),
+                            helpText: 'Pick month & day for yearly recurrence',
+                          );
+                          if (picked != null) {
+                            setDialogState(() {
+                              selectedRecurringDay = picked.day;
+                              // Also store the month in the selectedDate
+                              selectedDate = DateTime(selectedDate.year, picked.month, picked.day);
+                            });
+                          }
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF0F1419),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: Colors.white38),
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              const Text('Repeats on:', style: TextStyle(color: Colors.white70)),
+                              Text(
+                                selectedRecurringDay != null
+                                    ? DateFormat('MMM d').format(selectedDate)
+                                    : 'Pick date',
+                                style: const TextStyle(color: Colors.white),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
                     
                     const SizedBox(height: 8),
 
@@ -973,6 +1199,15 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
                         ),
                       ),
                     ),
+                    // Inline validation error
+                    if (errorText != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 12),
+                        child: Text(
+                          errorText!,
+                          style: const TextStyle(color: Colors.red, fontSize: 13),
+                        ),
+                      ),
                   ],
                 ),
               ),
@@ -988,30 +1223,43 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
                 ),
                 TextButton(
                   onPressed: () async {
-                    if (amountController.text.isNotEmpty && 
-                        selectedAccount != null && 
-                        selectedAccount!.id != null) {
-                      final amount = double.tryParse(amountController.text);
-                      if (amount == null) return;
-
-                      final finalAmount = isIncome ? amount : -amount;
-                      
-                      final transaction = AppTransaction(
-                        transactionId: DateTime.now().millisecondsSinceEpoch.toString(),
-                        accountId: selectedAccount!.id!,
-                        amount: finalAmount,
-                        date: selectedDate,
-                        description: descriptionController.text.isEmpty
-                            ? null
-                            : descriptionController.text,
-                        category: selectedCategory,
-                        isFixed: isFixed,
-                      );
-                      
-                      await _databaseService.insertTransaction(transaction);
-                      Navigator.pop(context);
-                      _loadData();
+                    // Validation
+                    if (amountController.text.isEmpty) {
+                      setDialogState(() { errorText = 'Please enter an amount'; });
+                      return;
                     }
+                    final amount = double.tryParse(amountController.text);
+                    if (amount == null || amount <= 0) {
+                      setDialogState(() { errorText = 'Please enter a valid positive amount'; });
+                      return;
+                    }
+                    if (selectedAccount == null || selectedAccount!.id == null) {
+                      setDialogState(() { errorText = 'Please select an account'; });
+                      return;
+                    }
+                    // Clear error
+                    setDialogState(() { errorText = null; });
+
+                    final finalAmount = isIncome ? amount : -amount;
+                    final isRecurring = selectedFrequency != 'None';
+                    
+                    final transaction = AppTransaction(
+                      transactionId: DateTime.now().millisecondsSinceEpoch.toString(),
+                      accountId: selectedAccount!.id!,
+                      amount: finalAmount,
+                      date: selectedDate,
+                      description: descriptionController.text.isEmpty
+                          ? null
+                          : descriptionController.text,
+                      category: selectedCategory,
+                      isRecurring: isRecurring,
+                      frequency: isRecurring ? selectedFrequency : null,
+                      recurringDay: isRecurring ? selectedRecurringDay : null,
+                    );
+                    
+                    await _databaseService.insertTransaction(transaction);
+                    Navigator.pop(context);
+                    _loadData();
                   },
                   child: const Text(
                     'Add',
@@ -1025,6 +1273,8 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
       },
     );
   }
+
+
 
   Widget _buildBottomNavBar(BuildContext context) {
     return AppBottomNavBar(

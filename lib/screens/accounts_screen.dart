@@ -31,6 +31,20 @@ class _AccountsScreenState extends State<AccountsScreen> {
     });
   }
 
+  Future<void> _setDefaultAccount(Account account) async {
+    await _databaseService.setDefaultAccount(account.id!);
+    await _loadAccounts();
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('${account.name} set as default'),
+          backgroundColor: const Color(0xFF4A90E2),
+          duration: const Duration(seconds: 1),
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -144,6 +158,9 @@ class _AccountsScreenState extends State<AccountsScreen> {
                                   decoration: BoxDecoration(
                                     color: const Color(0xFF1E2A3A),
                                     borderRadius: BorderRadius.circular(16),
+                                    border: account.isDefault 
+                                        ? Border.all(color: const Color(0xFF4A90E2), width: 2)
+                                        : null,
                                   ),
                                   child: Row(
                                     children: [
@@ -151,13 +168,21 @@ class _AccountsScreenState extends State<AccountsScreen> {
                                         child: Column(
                                           crossAxisAlignment: CrossAxisAlignment.start,
                                           children: [
-                                            Text(
-                                              account.name,
-                                              style: const TextStyle(
-                                                fontSize: 18,
-                                                fontWeight: FontWeight.bold,
-                                                color: Colors.white,
-                                              ),
+                                            Row(
+                                              children: [
+                                                Text(
+                                                  account.name,
+                                                  style: const TextStyle(
+                                                    fontSize: 18,
+                                                    fontWeight: FontWeight.bold,
+                                                    color: Colors.white,
+                                                  ),
+                                                ),
+                                                if (account.isDefault) ...[
+                                                  const SizedBox(width: 8),
+                                                  const Icon(Icons.star, color: Color(0xFF4A90E2), size: 16),
+                                                ],
+                                              ],
                                             ),
                                             const SizedBox(height: 4),
                                             Text(
@@ -170,13 +195,33 @@ class _AccountsScreenState extends State<AccountsScreen> {
                                           ],
                                         ),
                                       ),
-                                      Text(
-                                        'AED ${account.balance.toStringAsFixed(2)}',
-                                        style: const TextStyle(
-                                          fontSize: 20,
-                                          fontWeight: FontWeight.bold,
-                                          color: Colors.white,
-                                        ),
+                                      Column(
+                                        crossAxisAlignment: CrossAxisAlignment.end,
+                                        children: [
+                                          Text(
+                                            'AED ${account.balance.toStringAsFixed(2)}',
+                                            style: const TextStyle(
+                                              fontSize: 20,
+                                              fontWeight: FontWeight.bold,
+                                              color: Colors.white,
+                                            ),
+                                          ),
+                                          if (!account.isDefault)
+                                            GestureDetector(
+                                              onTap: () => _setDefaultAccount(account),
+                                              child: const Padding(
+                                                padding: EdgeInsets.only(top: 8),
+                                                child: Text(
+                                                  'Set Default',
+                                                  style: TextStyle(
+                                                    color: Color(0xFF4A90E2),
+                                                    fontSize: 12,
+                                                    fontWeight: FontWeight.bold,
+                                                  ),
+                                                ),
+                                              ),
+                                            ),
+                                        ],
                                       ),
                                     ],
                                   ),

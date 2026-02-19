@@ -36,6 +36,7 @@ class _VoiceInputDialogState extends State<VoiceInputDialog>
   ParsedTransaction? _parsedTransaction;
   String? _errorMessage;
   late AnimationController _pulseController;
+  Account? _defaultAccount;
 
   // Editable fields for confirmation
   Account? _selectedAccount;
@@ -43,6 +44,13 @@ class _VoiceInputDialogState extends State<VoiceInputDialog>
   final TextEditingController _amountController = TextEditingController();
   final TextEditingController _textInputController = TextEditingController(); // For manual text input
   DateTime _selectedDate = DateTime.now();
+  String _selectedFrequency = 'None';
+  final List<String> _frequencies = ['None', 'Daily', 'Weekly', 'Monthly', 'Yearly'];
+  String _selectedCategory = 'Uncategorized';
+  final List<String> _categories = [
+    'Food', 'Transport', 'Utilities', 'Rent', 'Salary', 
+    'Shopping', 'Entertainment', 'Health', 'Uncategorized', 'Other'
+  ];
 
   @override
   void initState() {
@@ -51,7 +59,7 @@ class _VoiceInputDialogState extends State<VoiceInputDialog>
       vsync: this,
       duration: const Duration(milliseconds: 1000),
     )..repeat(reverse: true);
-    _initializeVoice();
+    _initialize();
   }
 
   @override
@@ -61,6 +69,13 @@ class _VoiceInputDialogState extends State<VoiceInputDialog>
     _textInputController.dispose();
     _voiceService.stopListening();
     super.dispose();
+  }
+
+  Future<void> _initialize() async {
+    // Clear any stale state from a previous dialog session
+    await _voiceService.cancelListening();
+    await _initializeVoice();
+    _defaultAccount = await _databaseService.getDefaultAccount();
   }
 
   Future<void> _initializeVoice() async {
@@ -128,7 +143,11 @@ class _VoiceInputDialogState extends State<VoiceInputDialog>
       _isProcessing = true;
     });
 
-    final parsed = _parser.parse(_transcribedText, widget.accounts);
+    final parsed = _parser.parse(
+      _transcribedText, 
+      widget.accounts, 
+      defaultAccount: _defaultAccount,
+    );
 
     setState(() {
       _parsedTransaction = parsed;
@@ -151,6 +170,22 @@ class _VoiceInputDialogState extends State<VoiceInputDialog>
         );
       } else if (widget.accounts.isNotEmpty) {
         _selectedAccount = widget.accounts.first;
+      }
+      
+      if (parsed.category != null) {
+        _selectedCategory = parsed.category!;
+        // Ensure category is in list, else default to Other? or add it dynamically?
+        if (!_categories.contains(_selectedCategory)) {
+          if (_selectedCategory == 'Uncategorized') {
+             // keep it
+          } else {
+             // Maybe add it to list or map to Other
+             // For now, let's just keep it if it matches, otherwise Uncategorized
+             // actually parser returns title case categories that match our list usually
+          }
+        }
+      } else {
+        _selectedCategory = 'Uncategorized';
       }
     });
   }
@@ -238,6 +273,9 @@ class _VoiceInputDialogState extends State<VoiceInputDialog>
       amount: finalAmount,
       date: _selectedDate,
       description: _transcribedText.isNotEmpty ? _transcribedText : null,
+      frequency: _selectedFrequency == 'None' ? null : _selectedFrequency,
+      isRecurring: _selectedFrequency != 'None',
+      category: _selectedCategory,
     );
 
     await _databaseService.insertTransaction(transaction);
@@ -591,6 +629,39 @@ class _VoiceInputDialogState extends State<VoiceInputDialog>
           ),
           const SizedBox(height: 16),
 
+          const SizedBox(height: 16),
+
+          // Category Dropdown
+          DropdownButtonFormField<String>(
+            value: _categories.contains(_selectedCategory) ? _selectedCategory : 'Uncategorized',
+            dropdownColor: const Color(0xFF1E2A3A),
+            decoration: const InputDecoration(
+              labelText: 'Category',
+              labelStyle: TextStyle(color: Colors.white70),
+              enabledBorder: UnderlineInputBorder(
+                borderSide: BorderSide(color: Colors.white38),
+              ),
+              focusedBorder: UnderlineInputBorder(
+                borderSide: BorderSide(color: Color(0xFF4A90E2)),
+              ),
+            ),
+            items: _categories.map((String value) {
+              return DropdownMenuItem<String>(
+                value: value,
+                child: Text(
+                  value,
+                  style: const TextStyle(color: Colors.white),
+                ),
+              );
+            }).toList(),
+            onChanged: (String? newValue) {
+              if (newValue != null) {
+                setState(() => _selectedCategory = newValue);
+              }
+            },
+          ),
+          const SizedBox(height: 16),
+
           // Date picker
           GestureDetector(
             onTap: () async {
@@ -628,6 +699,37 @@ class _VoiceInputDialogState extends State<VoiceInputDialog>
                 ],
               ),
             ),
+          ),
+          const SizedBox(height: 16),
+
+          // Frequency Dropdown
+          DropdownButtonFormField<String>(
+            value: _selectedFrequency,
+            dropdownColor: const Color(0xFF1E2A3A),
+            decoration: const InputDecoration(
+              labelText: 'Frequency (Recurring)',
+              labelStyle: TextStyle(color: Colors.white70),
+              enabledBorder: UnderlineInputBorder(
+                borderSide: BorderSide(color: Colors.white38),
+              ),
+              focusedBorder: UnderlineInputBorder(
+                borderSide: BorderSide(color: Color(0xFF4A90E2)),
+              ),
+            ),
+            items: _frequencies.map((String value) {
+              return DropdownMenuItem<String>(
+                value: value,
+                child: Text(
+                  value,
+                  style: const TextStyle(color: Colors.white),
+                ),
+              );
+            }).toList(),
+            onChanged: (String? newValue) {
+              if (newValue != null) {
+                setState(() => _selectedFrequency = newValue);
+              }
+            },
           ),
         ],
       ),
