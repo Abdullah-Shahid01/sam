@@ -27,7 +27,7 @@ class CsvExportService {
     for (var tx in transactions) {
       final date = DateFormat('yyyy-MM-dd HH:mm').format(tx.date);
       final amount = tx.amount.toStringAsFixed(2);
-      final category = _escape(tx.category ?? 'Uncategorized');
+      final category = _escape(tx.category);
       final description = _escape(tx.description ?? '');
       final accountName = _escape(accountNames[tx.accountId] ?? 'Account ${tx.accountId}');
       final type = tx.amount < 0 ? 'Expense' : 'Income';

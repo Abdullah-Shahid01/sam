@@ -97,13 +97,12 @@ class _VoiceInputDialogState extends State<VoiceInputDialog>
 
     await _voiceService.startListening(
       onResult: (text, isFinal) {
-         if (mounted) {
+        if (mounted) {
           setState(() {
             _transcribedText = text;
           });
 
           if (isFinal) {
-            // Auto-stop listening when we have the final result
             _voiceService.stopListening();
             setState(() {
               _isListening = false;

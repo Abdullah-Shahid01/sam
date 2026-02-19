@@ -46,35 +46,21 @@ class TransactionParser {
     final lowerText = text.toLowerCase().trim();
     
     double confidence = 0.0;
-    int matches = 0;
 
     // Extract amount
     final amount = _extractAmount(lowerText);
-    if (amount != null) {
-      matches++;
-    }
 
     // Determine inflow or outflow
     final isInflow = _determineFlowType(lowerText);
-    if (isInflow != null) {
-      matches++;
-    }
 
     // Match account
     String? accountName = _matchAccount(lowerText, availableAccounts);
     if (accountName == null && defaultAccount != null) {
       accountName = defaultAccount.name;
     }
-    
-    if (accountName != null) {
-      matches++;
-    }
 
     // Extract date
     final date = _extractDate(lowerText);
-    if (date != null) {
-      matches++;
-    }
 
     // Extract Category
     final category = _extractCategory(lowerText);

@@ -1,7 +1,6 @@
 
 import 'package:flutter/material.dart';
 import '../config/theme.dart';
-import '../screens/dashboard_screen.dart';
 import '../screens/accounts_screen.dart';
 import '../screens/transactions_screen.dart';
 import '../screens/reports_screen.dart';

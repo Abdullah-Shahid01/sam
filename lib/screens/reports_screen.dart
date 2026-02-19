@@ -3,10 +3,8 @@ import '../config/theme.dart';
 import '../widgets/charts/expense_pie_chart.dart';
 import '../widgets/charts/income_expense_bar_chart.dart';
 import '../widgets/app_bottom_nav_bar.dart';
-import 'dashboard_screen.dart';
 import 'transactions_screen.dart';
 import '../models/transaction.dart';
-import '../models/account.dart';
 import '../services/csv_export_service.dart';
 
 import '../services/database_service.dart';
@@ -332,10 +330,4 @@ class _ReportsScreenState extends State<ReportsScreen> {
     );
   }
 
-  Widget _buildNavItem(BuildContext context, IconData icon, String label) {
-    // Legacy method - can be removed or left if used elsewhere (it's not)
-    // But since I am replacing _buildBottomNavBar which calls it, this code is now dead.
-    // I will just replace the _buildBottomNavBar method block.
-    return const SizedBox(); 
-  }
 }

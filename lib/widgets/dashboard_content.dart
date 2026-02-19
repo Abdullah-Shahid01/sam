@@ -191,8 +191,6 @@ class DashboardContent extends StatelessWidget {
         return Icons.account_balance_wallet;
       case AccountType.liability:
         return Icons.credit_card;
-      default:
-        return defaultIcon;
     }
   }
 }

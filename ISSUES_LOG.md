@@ -109,3 +109,36 @@ flutter run
 **Symptoms:** No visual indication of recurring transactions. "Fixed Costs" label confusing.
 **Root Cause:** `transactions_screen.dart` had zero references to `isRecurring`, `frequency`, or `isFixed`.
 **Solution:** Added category/account chips and 🔁 recurring badge to transaction cards. Renamed "Exclude Fixed" → "Exclude Recurring" in Reports.
+
+## 2026-02-19 - Debug Round: Voice Freeze (Attempt 4), Monthly Picker Crash, Validation UX
+
+### Bug 1 (RESOLVED): Voice Input Freeze — Root Cause Found (Attempt 5)
+**Symptoms:** Voice input freezes on second use. First use works; second use transcribes text but the red stop button stays frozen.
+**Root Cause — 3 distinct problems:**
+1. **Wrong code path:** There were TWO independent voice implementations. `voice_input_dialog.dart` uses `VoiceService` (all 4 prior fixes targeted this). `transactions_screen.dart` lines 547-665 uses a raw `stt.SpeechToText _speech` field (the ACTUAL code path). Debug logging proved this: `VOICE_DEBUG` prints never appeared while `Recognized:` / `Speech status:` did.
+2. **Stale SpeechToText instance:** `_speech` was created once in `initState` and reused forever. On second use, `_speech.initialize()` returned `true` from the plugin's cached `_initWorked` flag, silently skipping `onStatus`/`onError` callback re-registration.
+3. **Double-fire Navigator.pop:** Android `SpeechRecognizer` fires BOTH `notListening` AND `done` statuses sequentially. Each fired `Navigator.pop(context)` — the second pop corrupted navigation state. Also, `context` was the `StatefulBuilder`'s shadowed context, not the dialog's.
+**Failed Attempts:**
+1-4. All modified `VoiceService` / `voice_input_dialog.dart` — the wrong code path.
+**Solution (4-layer fix in `transactions_screen.dart`):**
+1. `hasProcessed` boolean guard — only the first of `notListening`/`done`/`finalResult` processes
+2. `finalResult` processing path in `onResult` — whichever arrives first (status or result) wins
+3. `Navigator.pop(dialogContext)` — uses the dialog's own context, not StatefulBuilder's shadowed one
+4. `try/catch` on all `setDialogState` calls — prevents crashes when callbacks fire after dialog dismissed
+**Prevention:**
+- Never have duplicate implementations of the same feature
+- Always verify which code path runs before fixing (add debug prints first)
+- Guard `Navigator.pop` against double-calling in speech callbacks
+- The `speech_to_text` plugin's `initialize()` must use a fresh instance each session
+
+
+
+### Bug: Monthly Day Picker Crashes Dialog
+**Symptoms:** Selecting "Monthly" frequency makes the entire Add Transaction dialog go blank. Error: "Cannot hit test a render box that has never been laid out."
+**Root Cause:** Horizontal `ListView.builder` inside an `AlertDialog` → `Column` → `SingleChildScrollView` has no constrained width from its parent. `ListView` requires a bounded cross-axis (width for horizontal scroll), but AlertDialog's content area doesn't provide explicit width constraints.
+**Solution:** Replaced `SizedBox` + `ListView.builder(scrollDirection: Axis.horizontal)` with `Wrap(spacing: 6, runSpacing: 6)`, which naturally wraps day numbers into multiple rows and doesn't need explicit width constraints.
+**Prevention:** Avoid horizontal `ListView` inside dialogs. Use `Wrap` for finite sets of items.
+
+### UX: Validation Error Placement
+**Symptoms:** Validation error text appeared at the very bottom of the dialog, far from the amount field it validates.
+**Solution:** Moved from a standalone `if (errorText != null) Text(...)` at the bottom to using `InputDecoration.errorText` on the Amount `TextField`. This places the error text directly under the field with a red underline, matching Material Design conventions.

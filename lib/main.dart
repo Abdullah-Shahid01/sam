@@ -1,7 +1,6 @@
 // lib/main.dart
 
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'config/theme.dart';
 import 'services/database_service.dart';
 import 'screens/dashboard_screen.dart';

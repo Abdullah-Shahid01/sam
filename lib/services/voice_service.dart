@@ -4,16 +4,17 @@ import 'package:speech_to_text/speech_to_text.dart';
 import 'package:speech_to_text/speech_recognition_result.dart';
 import 'package:speech_to_text/speech_recognition_error.dart';
 
-/// Service for handling speech-to-text functionality
+/// Service for handling speech-to-text functionality.
+/// Note: The primary voice input code path is in transactions_screen.dart.
+/// This service is used by voice_input_dialog.dart (secondary path).
 class VoiceService {
   static final VoiceService _instance = VoiceService._internal();
-  final SpeechToText _speechToText = SpeechToText();
+  SpeechToText _speechToText = SpeechToText();
   
   bool _isInitialized = false;
   bool _isListening = false;
   String _lastError = '';
   
-  // Store callback so _onStatus/_onError can notify the UI
   Function(bool isListening)? _onListeningStateChanged;
 
   factory VoiceService() => _instance;
@@ -24,8 +25,7 @@ class VoiceService {
   bool get isInitialized => _isInitialized;
   String get lastError => _lastError;
 
-  /// Initialize the speech recognition service
-  /// Returns true if initialization was successful
+  /// Initialize the speech recognition service.
   Future<bool> initialize() async {
     if (_isInitialized) return true;
 
@@ -41,27 +41,26 @@ class VoiceService {
     }
   }
 
-  /// Start listening for speech
-  /// [onResult] is called when speech is recognized
-  /// [onListeningStateChanged] is called when listening state changes
+  /// Start listening for speech.
+  /// Creates a fresh SpeechToText instance each call to avoid stale plugin state.
   Future<void> startListening({
     required Function(String text, bool isFinal) onResult,
     Function(bool isListening)? onListeningStateChanged,
   }) async {
-    // Store callback for status/error propagation
     _onListeningStateChanged = onListeningStateChanged;
     
-    // Force full reset: cancel any existing session and re-initialize
-    try {
-      await _speechToText.cancel();
-    } catch (_) {}
+    try { await _speechToText.cancel(); } catch (_) {}
     _isListening = false;
     
-    // Re-initialize the speech engine fresh each time
+    // Fresh instance — the plugin's internal _initWorked flag persists
+    // on reused instances, causing initialize() to silently skip callbacks.
+    _speechToText = SpeechToText();
     _isInitialized = false;
+    
     final success = await initialize();
     if (!success) {
       _lastError = 'Speech recognition not available';
+      onListeningStateChanged?.call(false);
       return;
     }
 
@@ -75,23 +74,24 @@ class VoiceService {
       listenFor: const Duration(seconds: 30),
       pauseFor: const Duration(seconds: 3),
       partialResults: true,
-      cancelOnError: true,
       listenMode: ListenMode.confirmation,
     );
   }
 
-  /// Stop listening for speech
+  /// Stop listening for speech.
   Future<void> stopListening() async {
     if (!_isListening) return;
     
-    await _speechToText.stop();
+    try {
+      await _speechToText.stop();
+    } catch (_) {}
     _isListening = false;
     _onListeningStateChanged?.call(false);
   }
 
-  /// Cancel listening without processing
+  /// Cancel listening without processing.
   Future<void> cancelListening() async {
-    await _speechToText.cancel();
+    try { await _speechToText.cancel(); } catch (_) {}
     _isListening = false;
     _onListeningStateChanged?.call(false);
     _onListeningStateChanged = null;
@@ -110,7 +110,7 @@ class VoiceService {
     }
   }
 
-  /// Check if speech recognition is available on this device
+  /// Check if speech recognition is available on this device.
   Future<bool> isAvailable() async {
     if (!_isInitialized) {
       await initialize();
@@ -118,7 +118,7 @@ class VoiceService {
     return _isInitialized;
   }
 
-  /// Get list of available locales for speech recognition
+  /// Get list of available locales for speech recognition.
   Future<List<LocaleName>> getLocales() async {
     if (!_isInitialized) {
       await initialize();

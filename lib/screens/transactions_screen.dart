@@ -5,15 +5,12 @@ import '../models/transaction.dart';
 import '../models/account.dart';
 import '../services/database_service.dart';
 import 'package:intl/intl.dart';
-import 'accounts_screen.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import '../services/transaction_parser.dart';
 import '../models/parsed_transaction.dart';
-import '../widgets/voice_input_dialog.dart';
 import '../widgets/app_bottom_nav_bar.dart';
-import 'reports_screen.dart';
 
 class TransactionsScreen extends StatefulWidget {
   final DateTime? startDate;
@@ -197,8 +194,7 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
                                       spacing: 8,
                                       runSpacing: 6,
                                       children: [
-                                        if (transaction.category != null)
-                                          _buildChip(transaction.category!, Icons.label_outline),
+                                        _buildChip(transaction.category, Icons.label_outline),
                                         _buildChip(accountName, Icons.account_balance_wallet_outlined),
                                         if (transaction.isRecurring && transaction.frequency != null)
                                           _buildChip('🔁 ${transaction.frequency}', null, color: const Color(0xFF6C5CE7)),
@@ -392,7 +388,6 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
       );
 
       if (result != null && result.files.single.path != null) {
-        final file = File(result.files.single.path!);
         final fileName = result.files.single.name;
         final fileExtension = result.files.single.extension;
         final fileSize = result.files.single.size;
@@ -544,11 +539,14 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
       return;
     }
 
+    // Guard against double-processing from notListening + done firing sequentially
+    bool hasProcessed = false;
+
     showDialog(
       context: context,
       builder: (BuildContext dialogContext) {
         return StatefulBuilder(
-          builder: (context, setDialogState) {
+          builder: (stfContext, setDialogState) {
             return AlertDialog(
               backgroundColor: const Color(0xFF1E2A3A),
               title: const Text(
@@ -561,30 +559,26 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
                   GestureDetector(
                     onTap: () async {
                       if (!_isListening) {
+                        // Always create a fresh SpeechToText instance
+                        try { await _speech.cancel(); } catch (_) {}
+                        _speech = stt.SpeechToText();
+                        hasProcessed = false;
+
                         bool available = await _speech.initialize(
                           onError: (error) {
-                            print('Speech error: $error');
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text('Error: ${error.errorMsg}'),
-                                backgroundColor: Colors.red,
-                              ),
-                            );
+                            _isListening = false;
+                            try { setDialogState(() {}); } catch (_) {}
                           },
                           onStatus: (status) {
-                            print('Speech status: $status');
-                            // Auto-process when speech engine says "done" (silence detected)
-                            if (status == 'done' || status == 'notListening') {
-                              setDialogState(() {
-                                _isListening = false;
-                              });
-                              setState(() {
-                                _isListening = false;
-                              });
-                              // Auto-process if we have text
+                            if ((status == 'done' || status == 'notListening') && !hasProcessed) {
+                              _isListening = false;
+                              try { setDialogState(() {}); } catch (_) {}
+
+                              // Only process if we have text and haven't already
                               if (_transcribedText.isNotEmpty) {
+                                hasProcessed = true;
                                 final result = _transactionParser.parse(_transcribedText, _accounts);
-                                Navigator.pop(context);
+                                Navigator.pop(dialogContext);
                                 _showAddTransactionDialog(context, parsedData: result);
                               }
                             }
@@ -592,20 +586,24 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
                         );
                         
                         if (available) {
-                          setDialogState(() {
-                            _isListening = true;
-                            _transcribedText = '';
-                          });
+                          _isListening = true;
+                          _transcribedText = '';
+                          setDialogState(() {});
                           
                           _speech.listen(
                             onResult: (result) {
-                              print('Recognized: ${result.recognizedWords}');
-                              setDialogState(() {
-                                _transcribedText = result.recognizedWords;
-                              });
-                              setState(() {
-                                _transcribedText = result.recognizedWords;
-                              });
+                              _transcribedText = result.recognizedWords;
+                              try { setDialogState(() {}); } catch (_) {}
+
+                              // If we get a final result, process immediately
+                              if (result.finalResult && !hasProcessed && _transcribedText.isNotEmpty) {
+                                hasProcessed = true;
+                                _isListening = false;
+                                _speech.stop();
+                                final parsed = _transactionParser.parse(_transcribedText, _accounts);
+                                Navigator.pop(dialogContext);
+                                _showAddTransactionDialog(context, parsedData: parsed);
+                              }
                             },
                             listenFor: const Duration(seconds: 30),
                             pauseFor: const Duration(seconds: 3),
@@ -619,7 +617,7 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
                           );
                         }
                       } else {
-                        // User manually stops — speech.stop triggers onStatus 'done' which auto-processes
+                        // User manually stops
                         _speech.stop();
                       }
                     },
@@ -678,11 +676,9 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
                   onPressed: () {
                     if (_isListening) {
                       _speech.stop();
-                      setState(() {
-                        _isListening = false;
-                      });
+                      _isListening = false;
                     }
-                    Navigator.pop(context);
+                    Navigator.pop(dialogContext);
                   },
                   child: const Text(
                     'Cancel',
@@ -1085,40 +1081,37 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
                       const SizedBox(height: 12),
                       const Text('Day of month:', style: TextStyle(color: Colors.white70, fontSize: 13)),
                       const SizedBox(height: 8),
-                      SizedBox(
-                        height: 40,
-                        child: ListView.builder(
-                          scrollDirection: Axis.horizontal,
-                          itemCount: 31,
-                          itemBuilder: (context, i) {
-                            final day = i + 1;
-                            final isSelected = selectedRecurringDay == day;
-                            return GestureDetector(
-                              onTap: () => setDialogState(() => selectedRecurringDay = day),
-                              child: Container(
-                                width: 36,
-                                margin: const EdgeInsets.only(right: 6),
-                                decoration: BoxDecoration(
-                                  color: isSelected ? const Color(0xFF4A90E2) : const Color(0xFF0F1419),
-                                  borderRadius: BorderRadius.circular(8),
-                                  border: Border.all(
-                                    color: isSelected ? const Color(0xFF4A90E2) : Colors.white38,
-                                  ),
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 6,
+                        children: List.generate(31, (i) {
+                          final day = i + 1;
+                          final isSelected = selectedRecurringDay == day;
+                          return GestureDetector(
+                            onTap: () => setDialogState(() => selectedRecurringDay = day),
+                            child: Container(
+                              width: 36,
+                              height: 36,
+                              decoration: BoxDecoration(
+                                color: isSelected ? const Color(0xFF4A90E2) : const Color(0xFF0F1419),
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(
+                                  color: isSelected ? const Color(0xFF4A90E2) : Colors.white38,
                                 ),
-                                child: Center(
-                                  child: Text(
-                                    '$day',
-                                    style: TextStyle(
-                                      color: isSelected ? Colors.white : Colors.white70,
-                                      fontSize: 13,
-                                      fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                                    ),
+                              ),
+                              child: Center(
+                                child: Text(
+                                  '$day',
+                                  style: TextStyle(
+                                    color: isSelected ? Colors.white : Colors.white70,
+                                    fontSize: 12,
+                                    fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
                                   ),
                                 ),
                               ),
-                            );
-                          },
-                        ),
+                            ),
+                          );
+                        }),
                       ),
                     ],
 
@@ -1171,14 +1164,22 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
                       controller: amountController,
                       keyboardType: TextInputType.numberWithOptions(decimal: true),
                       style: const TextStyle(color: Colors.white),
-                      decoration: const InputDecoration(
+                      decoration: InputDecoration(
                         labelText: 'Amount',
-                        labelStyle: TextStyle(color: Colors.white70),
-                        enabledBorder: UnderlineInputBorder(
+                        labelStyle: const TextStyle(color: Colors.white70),
+                        errorText: errorText,
+                        errorStyle: const TextStyle(color: Colors.red, fontSize: 13),
+                        enabledBorder: const UnderlineInputBorder(
                           borderSide: BorderSide(color: Colors.white38),
                         ),
-                        focusedBorder: UnderlineInputBorder(
+                        focusedBorder: const UnderlineInputBorder(
                           borderSide: BorderSide(color: Color(0xFF4A90E2)),
+                        ),
+                        errorBorder: const UnderlineInputBorder(
+                          borderSide: BorderSide(color: Colors.red),
+                        ),
+                        focusedErrorBorder: const UnderlineInputBorder(
+                          borderSide: BorderSide(color: Colors.red),
                         ),
                       ),
                     ),
@@ -1199,15 +1200,6 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
                         ),
                       ),
                     ),
-                    // Inline validation error
-                    if (errorText != null)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 12),
-                        child: Text(
-                          errorText!,
-                          style: const TextStyle(color: Colors.red, fontSize: 13),
-                        ),
-                      ),
                   ],
                 ),
               ),
@@ -1282,8 +1274,4 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
     );
   }
 
-  Widget _buildNavItem(BuildContext context, IconData icon, String label) {
-    // Legacy method - dead code
-    return const SizedBox();
-  }
 }
