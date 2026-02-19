@@ -41,7 +41,8 @@ class DatabaseService {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL,
         type INTEGER NOT NULL,
-        balance REAL NOT NULL
+        balance REAL NOT NULL,
+        last_interaction TEXT
       )
     ''');
 
@@ -60,7 +61,14 @@ class DatabaseService {
 
   Future<int> insertAccount(Account account) async {
     final db = await database;
-    return await db.insert('accounts', account.toMap());
+    final accountWithInteraction = Account(
+      id: account.id,
+      name: account.name,
+      type: account.type,
+      balance: account.balance,
+      lastInteraction: DateTime.now(),
+    );
+    return await db.insert('accounts', accountWithInteraction.toMap());
   }
 
   Future<List<Account>> getAccounts() async {
@@ -122,11 +130,27 @@ class DatabaseService {
       
       await db.update(
         'accounts',
-        {'balance': newBalance},
+        {
+          'balance': newBalance,
+          'last_interaction': DateTime.now().toIso8601String(),
+        },
         where: 'id = ?',
         whereArgs: [accountId],
       );
     }
+  }
+
+  Future<List<Account>> getRecentAccounts({int limit = 4}) async {
+    final db = await database;
+    final List<Map<String, dynamic>> maps = await db.query(
+      'accounts',
+      orderBy: 'last_interaction DESC',
+      limit: limit,
+    );
+
+    return List.generate(maps.length, (i) {
+      return Account.fromMap(maps[i]);
+    });
   }
 
   Future<List<AppTransaction>> getTransactions() async {

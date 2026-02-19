@@ -19,12 +19,14 @@ class Account {
   final String name;
   final AccountType type;
   final double balance;
+  final DateTime? lastInteraction;
 
   Account({
     this.id,
     required this.name,
     required this.type,
     required this.balance,
+    this.lastInteraction,
   });
 
   Map<String, dynamic> toMap() {
@@ -33,6 +35,7 @@ class Account {
       'name': name,
       'type': type.index,
       'balance': balance,
+      'last_interaction': lastInteraction?.toIso8601String(),
     };
   }
 
@@ -42,6 +45,9 @@ class Account {
       name: map['name'] as String,
       type: AccountType.values[map['type'] as int],
       balance: map['balance'] as double,
+      lastInteraction: map['last_interaction'] != null 
+          ? DateTime.parse(map['last_interaction'] as String)
+          : null,
     );
   }
 }
