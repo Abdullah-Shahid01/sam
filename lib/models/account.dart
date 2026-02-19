@@ -20,6 +20,7 @@ class Account {
   final AccountType type;
   final double balance;
   final bool isDefault;
+  final DateTime? lastInteraction;
 
   Account({
     this.id,
@@ -27,6 +28,7 @@ class Account {
     required this.type,
     required this.balance,
     this.isDefault = false,
+    this.lastInteraction,
   });
 
   Map<String, dynamic> toMap() {
@@ -36,6 +38,7 @@ class Account {
       'type': type.index,
       'balance': balance,
       'is_default': isDefault ? 1 : 0,
+      'last_interaction': lastInteraction?.toIso8601String(),
     };
   }
 
@@ -46,6 +49,9 @@ class Account {
       type: AccountType.values[map['type'] as int],
       balance: map['balance'] as double,
       isDefault: (map['is_default'] as int? ?? 0) == 1,
+      lastInteraction: map['last_interaction'] != null 
+          ? DateTime.parse(map['last_interaction'] as String)
+          : null,
     );
   }
 }
